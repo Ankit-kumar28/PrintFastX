@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const Order = require('../models/Order');
 const Shop = require('../models/Shop');
+const { deleteFileFromS3 } = require('../utils/s3');
 
 const router = express.Router();
 
@@ -90,17 +91,27 @@ router.delete('/:token', async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
     
-    // Purge uploaded physical files from storage to release server disk space
+    // Purge uploaded physical files from storage (S3 bucket or local disk)
     if (order.files && order.files.length > 0) {
       for (const file of order.files) {
         if (file.fileUrl) {
-          const absolutePath = path.join(__dirname, '..', file.fileUrl);
-          try {
-            if (fs.existsSync(absolutePath)) {
-              fs.unlinkSync(absolutePath);
+          if (file.fileUrl.startsWith('http')) {
+            // Delete from AWS S3
+            try {
+              await deleteFileFromS3(file.fileUrl);
+            } catch (s3Err) {
+              console.error(`Failed to delete S3 file: ${file.fileUrl}`, s3Err);
             }
-          } catch (fileErr) {
-            console.error(`Failed to delete file on manual order delete: ${absolutePath}`, fileErr);
+          } else {
+            // Delete from local disk storage
+            const absolutePath = path.join(__dirname, '..', file.fileUrl);
+            try {
+              if (fs.existsSync(absolutePath)) {
+                fs.unlinkSync(absolutePath);
+              }
+            } catch (fileErr) {
+              console.error(`Failed to delete file on manual order delete: ${absolutePath}`, fileErr);
+            }
           }
         }
       }

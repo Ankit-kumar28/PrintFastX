@@ -60,6 +60,7 @@ export default function ShopDashboard() {
   const [settingsForm, setSettingsForm] = useState({
     bwRate: 2,
     colorRate: 8,
+    priorityFee: 10,
     autoDeleteHours: 24,
     shopName: '',
     ownerName: '',
@@ -84,6 +85,7 @@ export default function ShopDashboard() {
       setSettingsForm({
         bwRate: updatedShop.pricing?.bwRate || 2,
         colorRate: updatedShop.pricing?.colorRate || 8,
+        priorityFee: updatedShop.pricing?.priorityFee || 10,
         autoDeleteHours: updatedShop.autoDeleteHours || 24,
         shopName: updatedShop.shopName || '',
         ownerName: updatedShop.ownerName || '',
@@ -95,18 +97,60 @@ export default function ShopDashboard() {
     }
   }, []);
 
-  const tokenLabelStyle = (status) => ({
-    background: status === 'completed' ? '#e8fff8' : '#f64a4a2c',
-    color: status === 'completed' ? '#0d9488' : '#ff0000ff',
-    border: status === 'completed' ? '2px solid #0d9488' : '2px solid #f64a4a',
-    fontWeight: 800,
-    padding: '6px 12px',
-    borderRadius: '8px',
-    fontSize: '20px',
-    fontFamily: 'monospace',
-    backdropFilter: 'blur(4px)',
-    display: 'inline-block',
-  });
+  /**
+   * Generates dynamic styling for the token display box.
+   * If the order is marked as completed, it uses a green styling.
+   * If pending and marked as high-priority, it gets a golden amber glow.
+   * Otherwise, it defaults to a soft red style.
+   * 
+   * @param {string} status - Current order status ('completed' or 'pending')
+   * @param {boolean} priority - Priority flag of the order
+   * @returns {object} React inline style object
+   */
+  const tokenLabelStyle = (status, priority) => {
+    const isCompleted = status === 'completed';
+    if (isCompleted) {
+      return {
+        background: '#e8fff8',
+        color: '#0d9488',
+        border: '2px solid #0d9488',
+        fontWeight: 800,
+        padding: '6px 12px',
+        borderRadius: '8px',
+        fontSize: '20px',
+        fontFamily: 'monospace',
+        backdropFilter: 'blur(4px)',
+        display: 'inline-block',
+      };
+    }
+    if (priority) {
+      return {
+        background: '#fef3c7',
+        color: '#b45309',
+        border: '2px solid #f59e0b',
+        boxShadow: '0 0 12px rgba(245, 158, 11, 0.5)',
+        fontWeight: 800,
+        padding: '6px 12px',
+        borderRadius: '8px',
+        fontSize: '20px',
+        fontFamily: 'monospace',
+        backdropFilter: 'blur(4px)',
+        display: 'inline-block',
+      };
+    }
+    return {
+      background: '#f64a4a2c',
+      color: '#ff0000ff',
+      border: '2px solid #f64a4a',
+      fontWeight: 800,
+      padding: '6px 12px',
+      borderRadius: '8px',
+      fontSize: '20px',
+      fontFamily: 'monospace',
+      backdropFilter: 'blur(4px)',
+      display: 'inline-block',
+    };
+  };
 
   /* ── Auth guard & Shop loading ── */
   useEffect(() => {
@@ -132,6 +176,7 @@ export default function ShopDashboard() {
     setSettingsForm({
       bwRate: parsed.pricing?.bwRate || 2,
       colorRate: parsed.pricing?.colorRate || 8,
+      priorityFee: parsed.pricing?.priorityFee || 10,
       autoDeleteHours: parsed.autoDeleteHours || 24,
       shopName: parsed.shopName || '',
       ownerName: parsed.ownerName || '',
@@ -337,10 +382,15 @@ export default function ShopDashboard() {
   // The A4 QR code poster printing logic has been extracted into a separate component.
   // See components/PrintQRPoster.jsx for the template structure and printing trigger.
 
+  /**
+   * Performs shopowner logout.
+   * Clears auth tokens from localStorage, redirects directly to the login
+   * screen, and replaces the navigation history entry to prevent back-button access.
+   */
   const handleLogout = () => {
     localStorage.clear();
-    navigate('/');
-    toast.success('Logged out');
+    navigate('/login', { replace: true });
+    toast.success('Logged out successfully');
   };
 
   // Derive stats for Dashboard / Analytics views
@@ -656,19 +706,19 @@ export default function ShopDashboard() {
             
             {/* Shop Name in right corner */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>{shop.shopName}</span>
+              <span style={{ fontSize: '32px', fontWeight: 800, color: '#0f2421ff' }}>{shop.shopName}</span>
               <div style={{
-                width: '36px',
-                height: '36px',
+                width: '46px',
+                height: '46px',
                 borderRadius: '50%',
-                background: '#f87171',
+                background: '#78b698ff',
                 color: '#fff',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontWeight: 900,
                 fontSize: '16px',
-                border: '1.5px solid #ef4444'
+                border: '1.5px solid #111d3bff'
               }}>
                 {shop.shopName?.charAt(0).toUpperCase()}
               </div>
@@ -722,7 +772,6 @@ export default function ShopDashboard() {
                       <th style={styles.th}>COPIES</th>
                       <th style={styles.th}>MODE</th>
                       <th style={styles.th}>AMOUNT</th>
-                      <th style={styles.th}>STATUS</th>
                       <th style={styles.th}>MARK/VIEW</th>
                     </tr>
                   </thead>
@@ -745,11 +794,32 @@ export default function ShopDashboard() {
                         ? (order.files[0].colorMode === 'color' ? 'Color' : 'B&W') 
                         : (hasColor ? 'Mixed' : 'B&W');
 
+                      const isPriorityPending = order.priority && order.status !== 'completed';
+
                       return (
                         <>
-                          <tr key={order.token} className="order-row" style={styles.tableRow}>
-                            <td style={styles.td}>
-                              <span style={tokenLabelStyle(order.status)}>{order.token}</span>
+                          <tr 
+                            key={order.token} 
+                            className="order-row" 
+                            style={{
+                              ...styles.tableRow,
+                              ...(isPriorityPending ? { background: '#fffbeb' } : {})
+                            }}
+                          >
+                            <td style={{
+                              ...styles.td,
+                              ...(isPriorityPending ? { borderLeft: '4px solid #d97706' } : {})
+                            }}>
+                              <span 
+                                onClick={() => handleToggleStatus(order)}
+                                style={{
+                                  ...tokenLabelStyle(order.status, order.priority),
+                                  cursor: 'pointer'
+                                }}
+                                title="Click to toggle status (Completed / Pending)"
+                              >
+                                {order.token}
+                              </span>
                             </td>
                             <td style={styles.td}>
                               <button 
@@ -790,39 +860,6 @@ export default function ShopDashboard() {
                             <td style={styles.td}>
                               <span style={styles.costText}>₹{order.amount}</span>
                             </td>
-                            
-                            {/* Toggle Switch Status column */}
-                            <td style={styles.td}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <div 
-                                  onClick={() => handleToggleStatus(order)}
-                                  style={{
-                                    width: '40px',
-                                    height: '20px',
-                                    borderRadius: '999px',
-                                    background: order.status === 'completed' ? '#10b981' : '#cbd5e1',
-                                    padding: '2px',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: order.status === 'completed' ? 'flex-end' : 'flex-start',
-                                    transition: 'all 0.2s',
-                                  }}
-                                  title="Toggle Status"
-                                >
-                                  <div style={{
-                                    width: '16px',
-                                    height: '16px',
-                                    borderRadius: '50%',
-                                    background: '#fff',
-                                    boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
-                                  }} />
-                                </div>
-                                <span style={{ fontSize: '11px', fontWeight: 700, color: order.status === 'completed' ? '#10b981' : '#64748b' }}>
-                                  {order.status === 'completed' ? 'Completed' : 'Pending'}
-                                </span>
-                              </div>
-                            </td>
 
                             <td style={styles.td}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -855,8 +892,17 @@ export default function ShopDashboard() {
 
                           {/* Expanded File Rows */}
                           {isExpanded && order.files?.map((file, idx) => (
-                            <tr key={`${order.token}-file-${idx}`} style={styles.expandedRow}>
-                              <td style={styles.td}></td>
+                            <tr 
+                              key={`${order.token}-file-${idx}`} 
+                              style={{
+                                ...styles.expandedRow,
+                                ...(isPriorityPending ? { background: '#fffbeb' } : {})
+                              }}
+                            >
+                              <td style={{
+                                ...styles.td,
+                                ...(isPriorityPending ? { borderLeft: '4px solid #d97706' } : {})
+                              }}></td>
                               <td style={styles.td}></td>
                               <td style={styles.td} colSpan={4}>
                                 <div style={{ paddingLeft: '16px', fontSize: '13px', color: '#475569' }}>
@@ -871,7 +917,6 @@ export default function ShopDashboard() {
                                   {file.colorMode === 'color' ? 'Color' : 'B&W'}
                                 </span>
                               </td>
-                              <td style={styles.td}></td>
                               <td style={styles.td}></td>
                             </tr>
                           ))}
@@ -1094,6 +1139,10 @@ export default function ShopDashboard() {
                       <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 600 }}>Color Print Rate:</span>
                       <span style={{ fontSize: '14px', color: '#0f172a', fontWeight: 800 }}>₹ {settingsForm.colorRate} / page</span>
                     </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
+                      <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 600 }}>Priority Order Fee:</span>
+                      <span style={{ fontSize: '14px', color: '#0f172a', fontWeight: 800 }}>₹ {settingsForm.priorityFee}</span>
+                    </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '4px' }}>
                       <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 600 }}>Auto-Delete Pending Queue:</span>
                       <span style={{ fontSize: '14px', color: '#0f172a', fontWeight: 800 }}>{settingsForm.autoDeleteHours} hours</span>
@@ -1129,6 +1178,19 @@ export default function ShopDashboard() {
                     </div>
 
                     <div style={styles.formGroup}>
+                      <label style={styles.settingsLabel}>Priority Order Fee (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={settingsForm.priorityFee}
+                        onChange={e => setSettingsForm({ ...settingsForm, priorityFee: parseFloat(e.target.value) })}
+                        style={styles.settingsInput}
+                        required
+                      />
+                    </div>
+
+                    <div style={styles.formGroup}>
                       <label style={styles.settingsLabel}>Auto-Delete Queue Timeout (Hours)</label>
                       <input
                         type="number"
@@ -1149,6 +1211,7 @@ export default function ShopDashboard() {
                             ...prev,
                             bwRate: shop.pricing?.bwRate || 2,
                             colorRate: shop.pricing?.colorRate || 8,
+                            priorityFee: shop.pricing?.priorityFee || 10,
                             autoDeleteHours: shop.autoDeleteHours || 24
                           }));
                         }}
@@ -1624,7 +1687,7 @@ const styles = {
     marginBottom: '24px',
   },
   shopNameText: {
-    fontSize: '14px',
+    fontSize: '20px',
     fontWeight: 700,
     color: '#fff',
     margin: 0,
@@ -1633,8 +1696,8 @@ const styles = {
     textOverflow: 'ellipsis',
   },
   shopIdText: {
-    fontSize: '11px',
-    color: '#64748b',
+    fontSize: '16px',
+    color: '#dde5efff',
     fontFamily: 'monospace',
     margin: '4px 0 0',
   },
@@ -1661,8 +1724,9 @@ const styles = {
     gap: '12px',
     padding: '12px 14px',
     borderRadius: '10px',
-    fontSize: '14px',
+    fontSize: '18px',
     fontWeight: 600,
+    color:'#c80909ff',
     marginTop: 'auto',
   },
   header: {

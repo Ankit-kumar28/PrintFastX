@@ -32,6 +32,9 @@ app.use('/api/upload', require('./routes/upload'));
 app.use('/api/qr', require('./routes/qr'));
 app.use('/api/orders', require('./routes/orders'));
 
+app.get('/test', (req, res) => {
+  res.json({ message: 'shops route working' });
+});
 // Health Check
 app.get('/', (req, res) => {
   res.json({ message: 'PrintFastX Backend is running 🚀' });

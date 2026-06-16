@@ -109,10 +109,15 @@ export default function SetupShop() {
     }
   };
 
+  /**
+   * Logs out the shopkeeper during the onboarding setup phase.
+   * Clears auth credentials, returns to the login screen, and replaces
+   * the current history record to protect dashboard access.
+   */
   const handleLogout = () => {
     localStorage.clear();
-    navigate('/');
-    toast.success("Logged out");
+    navigate('/login', { replace: true });
+    toast.success("Logged out successfully");
   };
 
   if (!shop) return null;

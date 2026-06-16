@@ -61,6 +61,22 @@ const PhoneIcon = () => (
     <line x1="12" y1="18" x2="12.01" y2="18"/>
   </svg>
 );
+const StarIcon = () => (
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+  </svg>
+);
+const GlobeIcon = () => (
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+  </svg>
+);
+const TrashIcon = () => (
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+  </svg>
+);
 
 /* ─── WhatsApp icon ─── */
 const WAIcon = () => (
@@ -432,6 +448,33 @@ export default function Home() {
               </div>
               <h3>Auto-Count Pages</h3>
               <p>Our smart system counts PDF pages automatically before you even print. <span className="highlight">Accurate billing</span>.</p>
+            </div>
+
+            {/* Card 4 */}
+            <div className="pd-card">
+              <div className="pd-card-icon teal" style={{ background: '#ea580c', color: '#fff' }}>
+                <StarIcon />
+              </div>
+              <h3>Priority Order Queue</h3>
+              <p>Allow urgent orders to skip the queue. Charge custom priority premiums set dynamically by you.</p>
+            </div>
+
+            {/* Card 5 */}
+            <div className="pd-card">
+              <div className="pd-card-icon blue" style={{ background: '#2563eb', color: '#fff' }}>
+                <GlobeIcon />
+              </div>
+              <h3>No App Install Friction</h3>
+              <p>Customers upload using any default mobile browser. Fast, simple, and zero onboarding delays.</p>
+            </div>
+
+            {/* Card 6 */}
+            <div className="pd-card">
+              <div className="pd-card-icon purple" style={{ background: '#dc2626', color: '#fff' }}>
+                <TrashIcon />
+              </div>
+              <h3>Auto-Cleanup Storage</h3>
+              <p>Keep your system clutter-free. Customer documents are automatically deleted after checkout or custom timeout presets.</p>
             </div>
           </div>
         </div>

@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const fs = require('fs');
 const path = require('path');
 const Order = require('../models/Order');
+const { deleteFileFromS3 } = require('../utils/s3');
 
 /**
  * Initializes and starts the background cron job for auto-deleting expired orders.
@@ -37,16 +38,25 @@ function initCleanupCron() {
         if (order.files && order.files.length > 0) {
           for (const file of order.files) {
             if (file.fileUrl) {
-              // fileUrl is stored relative to Backend directory (e.g. 'uploads/SHOPID/filename')
-              const absolutePath = path.join(__dirname, '..', file.fileUrl);
-              
-              try {
-                if (fs.existsSync(absolutePath)) {
-                  fs.unlinkSync(absolutePath);
+              if (file.fileUrl.startsWith('http')) {
+                // Delete from AWS S3
+                try {
+                  await deleteFileFromS3(file.fileUrl);
                   deletedFilesCount++;
+                } catch (s3Err) {
+                  console.error(`[Cron Job] Failed to delete S3 file: ${file.fileUrl}`, s3Err);
                 }
-              } catch (fileErr) {
-                console.error(`[Cron Job] Failed to delete physical file: ${absolutePath}`, fileErr);
+              } else {
+                // fileUrl is stored relative to Backend directory (e.g. 'uploads/SHOPID/filename')
+                const absolutePath = path.join(__dirname, '..', file.fileUrl);
+                try {
+                  if (fs.existsSync(absolutePath)) {
+                    fs.unlinkSync(absolutePath);
+                    deletedFilesCount++;
+                  }
+                } catch (fileErr) {
+                  console.error(`[Cron Job] Failed to delete physical file: ${absolutePath}`, fileErr);
+                }
               }
             }
           }

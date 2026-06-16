@@ -22,10 +22,15 @@ const localStorage = multer.diskStorage({
   }
 });
 
-// Multer Config (Easy to switch later)
+// Set storage engine dynamically: memory storage for S3 uploads, disk storage for local uploads
+const storageEngine = process.env.STORAGE_TYPE === 's3'
+  ? multer.memoryStorage()
+  : localStorage;
+
+// Multer Config (Dynamically switches storage target based on configuration)
 const uploadMiddleware = multer({
-  storage: localStorage,           // Change this to s3Storage when ready
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  storage: storageEngine,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
       'application/pdf',

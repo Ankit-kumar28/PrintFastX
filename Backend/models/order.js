@@ -60,6 +60,11 @@ const orderSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Flag indicating if the order has priority printing enabled
+  priority: {
+    type: Boolean,
+    default: false
+  },
   // Timestamp when the order and its files are scheduled for automatic deletion
   expiresAt: Date
 }, { 

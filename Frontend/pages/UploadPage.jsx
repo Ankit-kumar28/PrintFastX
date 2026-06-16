@@ -3,34 +3,58 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { 
-  Upload, 
-  FileText, 
-  Trash2, 
-  Plus, 
-  Send, 
-  Clock, 
+import {
+  Upload,
+  FileText,
+  Trash2,
+  Plus,
+  Send,
+  Clock,
   CheckCircle,
   AlertCircle
 } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+/**
+ * Returns a styled emoji icon representing the type of file.
+ * 
+ * @param {string} fileName - Name of the file
+ * @returns {React.ReactElement} Emoji element wrapper
+ */
+const getFileIcon = (fileName) => {
+  const name = fileName.toLowerCase();
+  if (name.endsWith('.pdf')) {
+    return <span style={{ fontSize: '22px', marginRight: '6px', flexShrink: 0 }} title="PDF Document">📕</span>;
+  }
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png')) {
+    return <span style={{ fontSize: '22px', marginRight: '6px', flexShrink: 0 }} title="Image File">🖼️</span>;
+  }
+  if (name.endsWith('.doc') || name.endsWith('.docx')) {
+    return <span style={{ fontSize: '22px', marginRight: '6px', flexShrink: 0 }} title="Word Document">📘</span>;
+  }
+  return <span style={{ fontSize: '22px', marginRight: '6px', flexShrink: 0 }} title="File">📄</span>;
+};
+
 export default function UploadPage() {
   const { shopId } = useParams();
   const [shop, setShop] = useState(null);
   const [shopLoading, setShopLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
-  
+
   // State for files list
   const [files, setFiles] = useState([]);
   const [priorityPrint, setPriorityPrint] = useState(false);
   const [customerNotes, setCustomerNotes] = useState('');
-  
+
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [token, setToken] = useState('');
   const [totalAmount, setTotalAmount] = useState(0);
+
+  // UI drag state & detailed fare breakdown visibility toggles
+  const [isDragging, setIsDragging] = useState(false);
+  const [showBreakdown, setShowBreakdown] = useState(false);
 
   // Fetch shop details (Public Endpoint)
   useEffect(() => {
@@ -68,14 +92,28 @@ export default function UploadPage() {
     });
   };
 
-  const handleFileSelect = async (e) => {
-    const selectedFiles = Array.from(e.target.files);
-    if (!selectedFiles.length) return;
-
+  /**
+   * Processes a list of selected or dropped files.
+   * Validates supported extensions (PDF, Word DOC/DOCX, JPEG/PNG),
+   * counts pages dynamically, and inserts them into state.
+   * 
+   * @param {Array<File>} selectedFiles - File objects list
+   */
+  const processSelectedFiles = async (selectedFiles) => {
     toast.loading("Processing files...", { id: "fileLoad" });
     const newFiles = [];
-    
+
     for (const file of selectedFiles) {
+      // Clean extensions check to restrict unsupported file drops
+      const validExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx'];
+      const fileNameLower = file.name.toLowerCase();
+      const isValid = validExtensions.some(ext => fileNameLower.endsWith(ext));
+
+      if (!isValid) {
+        toast.error(`Unsupported format: ${file.name}. Please select PDF, DOCX, or JPEG/PNG.`, { duration: 4000 });
+        continue;
+      }
+
       let pages = 1;
       if (file.type === 'application/pdf') {
         pages = await countPDFPages(file);
@@ -86,27 +124,63 @@ export default function UploadPage() {
         name: file.name,
         size: file.size,
         pages,
-        colorMode: 'bw', // default B&W
-        copies: 1,       // default 1 copy
-        sides: 'single'  // default single-sided
+        colorMode: 'bw',
+        copies: 1,
+        sides: 'single'
       });
     }
 
-    setFiles(prev => [...prev, ...newFiles]);
+    if (newFiles.length > 0) {
+      setFiles(prev => [...prev, ...newFiles]);
+      toast.success("Files added successfully!");
+    }
     toast.dismiss("fileLoad");
-    toast.success("Files added!");
   };
 
+  /**
+   * Triggered when selecting files manually via the OS file explorer dialog.
+   */
+  const handleFileSelect = async (e) => {
+    const selectedFiles = Array.from(e.target.files);
+    if (!selectedFiles.length) return;
+    await processSelectedFiles(selectedFiles);
+  };
+
+  /* ── Drag & Drop Event Handlers ── */
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    if (!droppedFiles.length) return;
+    await processSelectedFiles(droppedFiles);
+  };
+
+  /**
+   * Removes a selected file from the local state array.
+   */
   const deleteFileItem = (id) => {
     setFiles(prev => prev.filter(f => f.id !== id));
     toast.success("File removed");
   };
 
+  /**
+   * Updates print settings (color mode, copies count) for a specific file ID.
+   */
   const updateFileSetting = (id, key, val) => {
     setFiles(prev => prev.map(f => f.id === id ? { ...f, [key]: val } : f));
   };
 
-  // Recalculate Total Amount
+  // Recalculate Total Amount (incorporating custom shop priority pricing)
   useEffect(() => {
     if (!shop) return;
     const bwRate = shop.pricing?.bwRate || 2;
@@ -115,16 +189,13 @@ export default function UploadPage() {
     let subtotal = 0;
     files.forEach(f => {
       const baseRate = f.colorMode === 'color' ? colorRate : bwRate;
-      let finalRate = baseRate;
-      if (f.sides === 'double') {
-        finalRate = Math.round(baseRate * 0.6); // Double-sided discount logic matching backend
-      }
-      const fileAmount = Math.round(f.pages * f.copies * finalRate);
+      const fileAmount = Math.round(f.pages * f.copies * baseRate);
       subtotal += fileAmount;
     });
 
     if (priorityPrint) {
-      subtotal += 10;
+      const fee = shop.pricing?.priorityFee !== undefined ? shop.pricing.priorityFee : 10;
+      subtotal += fee;
     }
     setTotalAmount(subtotal);
   }, [files, priorityPrint, shop]);
@@ -152,7 +223,7 @@ export default function UploadPage() {
       sides: f.sides,
       pages: f.pages
     }));
-    
+
     formData.append('fileSettings', JSON.stringify(settings));
     formData.append('priority', priorityPrint);
     formData.append('notes', customerNotes);
@@ -225,6 +296,10 @@ export default function UploadPage() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap');
         * { box-sizing: border-box; }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
         @media (max-width: 480px) {
           .upload-page-container {
             padding: 12px !important;
@@ -251,10 +326,18 @@ export default function UploadPage() {
         <p style={styles.subtitle}>Privacy first - Quick & Easy Printing</p>
 
         {files.length === 0 ? (
-          /* INITIAL VIEW: UPLOAD BOX */
+          /* INITIAL VIEW: UPLOAD BOX WITH DRAG & DROP SUPPORT */
           <div style={styles.initialUploadBox}>
-            <div style={styles.dashedUploadBox}>
-              <Upload size={48} style={{ color: '#0d9488', marginBottom: '16px' }} />
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              style={{
+                ...styles.dashedUploadBox,
+                ...(isDragging ? styles.dashedUploadBoxActive : {})
+              }}
+            >
+              <Upload size={48} style={{ color: isDragging ? '#0f766e' : '#0d9488', marginBottom: '16px', transition: 'color 0.2s' }} />
               <input
                 type="file"
                 multiple
@@ -266,18 +349,18 @@ export default function UploadPage() {
               <label htmlFor="filesInput" style={styles.selectBtn}>
                 Select Files
               </label>
-              <p style={styles.uploadText}>Tap to select files for printing</p>
-              <p style={styles.uploadSecText}>🔒 Your files are secure & auto-deleted</p>
+              <p style={styles.uploadText}>Drag & drop files here, or tap to browse</p>
+              <p style={styles.uploadSecText}>🔒 PDF, Word (DOC/DOCX), or JPEG/PNG only</p>
             </div>
-            
+
             <div style={styles.dividerRow}>
               <div style={styles.dividerLine} />
               <span style={styles.dividerText}>OR</span>
               <div style={styles.dividerLine} />
             </div>
 
-            <button 
-              onClick={() => toast("WhatsApp bot feature coming soon!", { icon: "💬" })} 
+            <button
+              onClick={() => toast("WhatsApp bot feature coming soon!", { icon: "💬" })}
               style={styles.btnWhatsapp}
             >
               Upload via WhatsApp
@@ -311,7 +394,7 @@ export default function UploadPage() {
                   {/* Row 1: File metadata & Delete */}
                   <div style={styles.fileMetaRow}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
-                      <FileText size={20} style={{ color: '#94a3b8', flexShrink: 0 }} />
+                      {getFileIcon(f.name)}
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <p style={styles.fileNameText}>{f.name}</p>
                         <p style={styles.fileSizeText}>
@@ -369,17 +452,6 @@ export default function UploadPage() {
                         +
                       </button>
                     </div>
-
-                    {/* Double-sided selector */}
-                    <label style={styles.doubleSidedLabel}>
-                      <input
-                        type="checkbox"
-                        checked={f.sides === 'double'}
-                        onChange={(e) => updateFileSetting(f.id, 'sides', e.target.checked ? 'double' : 'single')}
-                        style={{ marginRight: '6px' }}
-                      />
-                      Double-sided
-                    </label>
                   </div>
                 </div>
               ))}
@@ -396,7 +468,7 @@ export default function UploadPage() {
                 />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                   <span style={{ fontWeight: 700, color: '#92400e', fontSize: '14px' }}>
-                    ⭐ Priority Print (+₹10)
+                    ⭐ Priority Print (+₹{shop.pricing?.priorityFee !== undefined ? shop.pricing.priorityFee : 10})
                   </span>
                   <span style={{ fontSize: '11px', color: '#b45309' }}>
                     Skip the queue — your order prints first
@@ -416,20 +488,72 @@ export default function UploadPage() {
               />
             </div>
 
+            {/* Detailed price breakdown list (collapsible accordion) */}
+            {showBreakdown && (
+              <div style={styles.breakdownBox}>
+                <p style={styles.breakdownTitle}>Fare Breakdown</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {files.map(f => {
+                    const bwRate = shop.pricing?.bwRate || 2;
+                    const colorRate = shop.pricing?.colorRate || 8;
+                    const rate = f.colorMode === 'color' ? colorRate : bwRate;
+                    const cost = f.pages * f.copies * rate;
+                    return (
+                      <div key={f.id} style={styles.breakdownRow}>
+                        <span style={styles.breakdownFileName}>{f.name}</span>
+                        <span style={styles.breakdownVal}>
+                          {f.pages} pg × {f.copies} ({f.colorMode === 'color' ? 'Color' : 'B&W'}) = ₹{cost}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {priorityPrint && (
+                    <div style={{ ...styles.breakdownRow, borderTop: '1px dashed #e2e8f0', paddingTop: '8px', color: '#b45309', fontWeight: 600 }}>
+                      <span>⭐ Priority Print Premium</span>
+                      <span>+₹{shop.pricing?.priorityFee !== undefined ? shop.pricing.priorityFee : 10}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Bottom sticky/floating total bar */}
             <div className="price-summary-row" style={styles.actionFooter}>
               <div style={styles.priceSummary}>
-                <span style={{ fontSize: '12px', color: '#64748b' }}>Total</span>
+                <div
+                  onClick={() => setShowBreakdown(!showBreakdown)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                  title="Click to toggle price breakdown details"
+                >
+                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Total</span>
+                  <span style={{ fontSize: '10px', color: '#0d9488', textDecoration: 'underline' }}>
+                    {showBreakdown ? 'Hide Details' : 'View Details'}
+                  </span>
+                </div>
                 <span style={styles.totalPriceText}>₹{totalAmount}</span>
                 <span style={{ fontSize: '10px', color: '#94a3b8' }}>Pay at counter</span>
               </div>
-              
-              <button 
-                onClick={handleSubmit} 
-                disabled={loading} 
-                style={styles.btnPrimarySend}
+
+              <button
+                onClick={handleSubmit}
+                disabled={loading}
+                style={{
+                  ...styles.btnPrimarySend,
+                  opacity: loading ? 0.7 : 1,
+                  cursor: loading ? 'not-allowed' : 'pointer'
+                }}
               >
-                <Send size={16} /> Send Files
+                {loading ? (
+                  <>
+                    <span style={styles.spinnerMini} />
+                    <span>Sending...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send size={16} />
+                    <span>Send Files</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -486,6 +610,49 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
+    transition: 'all 0.2s ease-in-out',
+  },
+  dashedUploadBoxActive: {
+    borderColor: '#0d9488',
+    background: '#f0fdfa',
+    transform: 'scale(1.01)',
+    boxShadow: '0 4px 20px rgba(13, 148, 136, 0.05)',
+  },
+  breakdownBox: {
+    background: '#f8fafc',
+    border: '1.5px solid #e2e8f0',
+    borderRadius: '16px',
+    padding: '16px',
+    textAlign: 'left',
+    marginTop: '4px',
+  },
+  breakdownTitle: {
+    fontSize: '11px',
+    fontWeight: 800,
+    color: '#475569',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    marginBottom: '10px',
+    borderBottom: '1px solid #e2e8f0',
+    paddingBottom: '6px',
+  },
+  breakdownRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: '12px',
+    color: '#475569',
+    gap: '12px',
+  },
+  breakdownFileName: {
+    fontWeight: 600,
+    color: '#1e293b',
+    textOverflow: 'ellipsis',
+    overflow: 'hidden',
+    whiteSpace: 'nowrap',
+    flex: 1,
+  },
+  breakdownVal: {
+    flexShrink: 0,
   },
   selectBtn: {
     background: '#0d9488',
@@ -711,6 +878,15 @@ const styles = {
     height: '28px',
     border: '2px solid #e2e8f0',
     borderTopColor: '#0d9488',
+    borderRadius: '50%',
+    animation: 'spin 0.7s linear infinite',
+  },
+  spinnerMini: {
+    display: 'inline-block',
+    width: '16px',
+    height: '16px',
+    border: '2px solid rgba(255,255,255,0.3)',
+    borderTopColor: '#ffffff',
     borderRadius: '50%',
     animation: 'spin 0.7s linear infinite',
   },

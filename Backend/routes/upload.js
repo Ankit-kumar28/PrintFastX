@@ -2,9 +2,11 @@
 const express = require('express');
 const uploadMiddleware = require('../middleware/upload');
 const fs = require('fs');
+const path = require('path');
 const { PDFDocument } = require('pdf-lib');
 const Order = require('../models/Order');
 const Shop = require('../models/Shop');
+const { uploadBufferToS3 } = require('../utils/s3');
 
 const router = express.Router();
 
@@ -57,11 +59,11 @@ router.post('/:shopId', uploadMiddleware.array('files'), async (req, res) => {
       const colorMode = settings.colorMode || 'bw';
       const sides = settings.sides || 'single';
 
-      // Count PDF pages
+      // Count PDF pages (loads from memory buffer if S3 is enabled, falls back to disk path for local)
       let pages = 1;
       if (file.mimetype === 'application/pdf') {
         try {
-          const pdfBytes = fs.readFileSync(file.path);
+          const pdfBytes = file.buffer ? file.buffer : fs.readFileSync(file.path);
           const pdfDoc = await PDFDocument.load(pdfBytes);
           pages = pdfDoc.getPageCount();
         } catch (err) {
@@ -77,11 +79,16 @@ router.post('/:shopId', uploadMiddleware.array('files'), async (req, res) => {
       const fileAmount = Math.round(pages * copies * finalRate);
       totalAmount += fileAmount;
 
-      // 🔥 IMPORTANT: Save RELATIVE path only
-      const relativePath = `uploads/${shopId}/${file.filename}`;
+      // Save file url: upload to AWS S3 if storage engine is configured, otherwise use local disk relative path
+      let fileUrl = '';
+      if (process.env.STORAGE_TYPE === 's3') {
+        fileUrl = await uploadBufferToS3(file, shopId);
+      } else {
+        fileUrl = `uploads/${shopId}/${file.filename}`;
+      }
 
       dbFiles.push({
-        fileUrl: relativePath,        // ← Fixed
+        fileUrl,
         fileName: file.originalname,
         pages,
         copies,
@@ -90,9 +97,12 @@ router.post('/:shopId', uploadMiddleware.array('files'), async (req, res) => {
       });
     }
 
-    // Priority fee (optional)
+    // Priority fee calculation (reads custom fee from shop settings, defaults to 10)
     const priority = req.body.priority === 'true' || req.body.priority === true;
-    if (priority) totalAmount += 10;
+    if (priority) {
+      const fee = shop.pricing?.priorityFee !== undefined ? shop.pricing.priorityFee : 10;
+      totalAmount += fee;
+    }
 
     // Generate Token using counter
     let updatedShop = await Shop.findOneAndUpdate(
@@ -119,6 +129,7 @@ router.post('/:shopId', uploadMiddleware.array('files'), async (req, res) => {
       files: dbFiles,
       amount: totalAmount,
       customerNotes: req.body.notes || '',
+      priority, // Flag this order as priority for dashboard highlighting
       expiresAt: new Date(Date.now() + shop.autoDeleteHours * 60 * 60 * 1000)
     });
 
