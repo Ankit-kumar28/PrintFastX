@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 
 // Cached S3 Client instance
 let s3ClientInstance = null;
@@ -111,45 +111,7 @@ async function deleteFileFromS3(fileUrl) {
   }
 }
 
-/**
- * Fetches an object from AWS S3 as a stream.
- * 
- * @param {string} fileUrl - Full public URL of the S3 object.
- * @returns {Promise<Object>} Object containing Body stream and ContentType.
- */
-async function downloadFileFromS3(fileUrl) {
-  if (!fileUrl) {
-    throw new Error('[S3 Storage] File URL is required to download from S3.');
-  }
-
-  const s3 = getS3Client();
-  const bucketName = process.env.AWS_S3_BUCKET_NAME;
-
-  if (!bucketName) {
-    throw new Error('[S3 Storage] AWS_S3_BUCKET_NAME is not set.');
-  }
-
-  // Extract key from URL
-  const urlParts = fileUrl.split('.amazonaws.com/');
-  if (urlParts.length < 2) {
-    throw new Error(`[S3 Storage] Unable to parse S3 key from URL: ${fileUrl}`);
-  }
-
-  const key = decodeURIComponent(urlParts[1]);
-  const command = new GetObjectCommand({
-    Bucket: bucketName,
-    Key: key,
-  });
-
-  const response = await s3.send(command);
-  return {
-    Body: response.Body,
-    ContentType: response.ContentType,
-  };
-}
-
 module.exports = {
   uploadBufferToS3,
   deleteFileFromS3,
-  downloadFileFromS3,
 };
