@@ -311,9 +311,7 @@ export default function ShopDashboard() {
 
   /* ── Trigger File Printing/Download ── */
   const handlePrintFile = (order, file) => {
-    const fileUrl = file.fileUrl.startsWith('http')
-      ? file.fileUrl
-      : `${API}/${file.fileUrl.replace(/\\/g, '/')}`;
+    const fileUrl = `${API}/api/orders/${order.token}/file/${file._id || file.id}`;
     window.open(fileUrl, '_blank');
     
     // Auto delete after 12 hours unless marked
@@ -327,9 +325,7 @@ export default function ShopDashboard() {
   };
 
   const handleDownloadFile = async (order, file) => {
-    const fileUrl = file.fileUrl.startsWith('http')
-      ? file.fileUrl
-      : `${API}/${file.fileUrl.replace(/\\/g, '/')}`;
+    const fileUrl = `${API}/api/orders/${order.token}/file/${file._id || file.id}`;
     try {
       toast.loading("Downloading file...", { id: `download-${file._id || file.fileName}` });
       const res = await axios.get(fileUrl, { responseType: 'blob' });

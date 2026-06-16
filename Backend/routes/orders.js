@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const Order = require('../models/order');
 const Shop = require('../models/shop');
-const { deleteFileFromS3 } = require('../utils/s3');
+const { deleteFileFromS3, downloadFileFromS3 } = require('../utils/s3');
 
 const router = express.Router();
 
@@ -123,6 +123,46 @@ router.delete('/:token', async (req, res) => {
     res.json({ success: true, message: 'Order and its files deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @route   GET /api/orders/:token/file/:fileId
+ * @desc    Securely download or view an order file (S3 or local) via proxy
+ * @access  Public (accessible via token)
+ */
+router.get('/:token/file/:fileId', async (req, res) => {
+  try {
+    const order = await Order.findOne({ token: req.params.token });
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const file = order.files.find(f => f._id.toString() === req.params.fileId || f.id === req.params.fileId);
+    if (!file) {
+      return res.status(404).json({ error: 'File not found in this order' });
+    }
+
+    if (file.fileUrl.startsWith('http')) {
+      // Stream from AWS S3
+      const { Body, ContentType } = await downloadFileFromS3(file.fileUrl);
+      
+      res.setHeader('Content-Type', ContentType || 'application/octet-stream');
+      // Set inline disposition so that files (like PDF or images) can open/preview directly in browser
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.fileName)}"`);
+      
+      Body.pipe(res);
+    } else {
+      // Local disk file
+      const absolutePath = path.join(__dirname, '..', file.fileUrl);
+      if (!fs.existsSync(absolutePath)) {
+        return res.status(404).json({ error: 'Local file does not exist on disk' });
+      }
+      res.sendFile(absolutePath);
+    }
+  } catch (error) {
+    console.error('[File Fetch Error]', error);
+    res.status(500).json({ error: 'Failed to retrieve file: ' + error.message });
   }
 });
 
