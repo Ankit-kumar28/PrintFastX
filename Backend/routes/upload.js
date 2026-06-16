@@ -4,8 +4,8 @@ const uploadMiddleware = require('../middleware/upload');
 const fs = require('fs');
 const path = require('path');
 const { PDFDocument } = require('pdf-lib');
-const Order = require('../models/Order');
-const Shop = require('../models/Shop');
+const Order = require('../models/order');
+const Shop = require('../models/shop');
 const { uploadBufferToS3 } = require('../utils/s3');
 
 const router = express.Router();

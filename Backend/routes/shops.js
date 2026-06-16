@@ -3,8 +3,8 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
-const Shop = require('../models/Shop');
-const Order = require('../models/Order');
+const Shop = require('../models/shop');
+const Order = require('../models/order');
 const { auth, adminAuth } = require('../middleware/auth');
 
 const router = express.Router();
