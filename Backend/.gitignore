@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Local Environment / Secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Server upload directories (customer files)
+uploads/*
+!uploads/.gitkeep
+
+# System and logs
+*.log
+npm-debug.log*
+.DS_Store
+.vscode/
+.idea/

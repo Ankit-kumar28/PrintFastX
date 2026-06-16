@@ -1,0 +1,46 @@
+// src/App.jsx
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
+
+import Home from '../pages/Home';
+import UploadPage from '../pages/UploadPage';
+import ShopLogin from '../pages/ShopLogin';
+import ShopRegister from '../pages/ShopRegister';
+import SetupShop from '../pages/SetupShop';
+import ShopDashboard from '../pages/ShopDashboard';
+import AdminLogin from '../pages/AdminLogin';
+import AdminDashboard from '../pages/AdminDashboard';
+import Contact from '../pages/Contact';
+import Privacy from '../pages/Privacy';
+import Terms from '../pages/Terms';
+import Refund from '../pages/Refund';
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/" element={<Home />} />
+        <Route path="/upload/:shopId" element={<UploadPage />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/terms" element={<Terms />} />
+        <Route path="/refund" element={<Refund />} />
+
+        {/* Shop Owner Routes */}
+        <Route path="/register" element={<ShopRegister />} />
+        <Route path="/login" element={<ShopLogin />} />
+        <Route path="/setup-shop" element={<SetupShop />} />
+
+        <Route path="/dashboard" element={<ShopDashboard />} />
+        {/* Admin Routes */}
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin" element={<AdminDashboard />} />
+      </Routes>
+
+      <Toaster position="top-center" />
+    </Router>
+  );
+}
+
+export default App;
