@@ -1,8 +1,8 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const Order = require('../models/Order');
-const Shop = require('../models/Shop');
+const Order = require('../models/order');
+const Shop = require('../models/shop');
 const { deleteFileFromS3 } = require('../utils/s3');
 
 const router = express.Router();
