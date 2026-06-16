@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const fs = require('fs');
 const path = require('path');
-const Order = require('../models/Order');
+const Order = require('../models/order');
 const { deleteFileFromS3 } = require('../utils/s3');
 
 /**
