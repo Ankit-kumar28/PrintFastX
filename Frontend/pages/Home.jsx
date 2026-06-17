@@ -295,13 +295,60 @@ export default function Home() {
         .pd-plan-btn.filled { background: #0d9488; color: #fff; border-color: #0d9488; }
         .pd-plan-btn.filled:hover { background: #0f766e; }
 
-        /* Footer */
-        .pd-footer { background: #fff; border-top: 1px solid #e2e8f0; padding: 28px 32px; }
-        .pd-footer-inner { max-width: 1120px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
-        .pd-footer-copy { font-size: 14px; color: #64748b; font-weight: 500; }
-        .pd-footer-links { display: flex; gap: 28px; }
-        .pd-footer-links a { font-size: 14px; color: #64748b; text-decoration: none; transition: color 0.2s; }
-        .pd-footer-links a:hover { color: #0f172a; }
+        /* Footer Styles */
+        .pd-footer { 
+          background: #f8fafc; 
+          border-top: 1px solid #e2e8f0; 
+          padding: 32px 80px; 
+        }
+        .pd-footer-inner { 
+          max-width: 1120px; 
+          margin: 0 auto; 
+          display: flex; 
+          align-items: center; 
+          justify-content: space-between; 
+          flex-wrap: wrap; 
+          gap: 16px; 
+        }
+        .pd-footer-copy { 
+          font-size: 15px; 
+          color: #475569; 
+          font-weight: 500; 
+        }
+        .pd-footer-links { 
+          display: flex; 
+          gap: 28px; 
+          flex-wrap: wrap;
+        }
+        .pd-footer-links a { 
+          font-size: 15px; 
+          color: #475569; 
+          text-decoration: none; 
+          transition: color 0.2s; 
+          font-weight: 500;
+        }
+        .pd-footer-links a:hover { 
+          color: #0d9488; 
+        }
+
+        /* Trial Banner Style */
+        .pd-trial-banner {
+          background: linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%);
+          border: 1.5px solid #5eead4;
+          border-radius: 16px;
+          padding: 16px 24px;
+          text-align: center;
+          max-width: 600px;
+          margin: 0 auto 40px;
+          font-size: 15px;
+          color: #0f766e;
+          font-weight: 600;
+          box-shadow: 0 4px 20px rgba(13, 148, 136, 0.05);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+        }
 
         @media (max-width: 900px) {
           .pd-hero-inner { grid-template-columns: 1fr; }
@@ -310,9 +357,23 @@ export default function Home() {
           .pd-pricing-cards { grid-template-columns: 1fr; }
           .pd-nav-links { gap: 16px; }
         }
+        @media (max-width: 768px) {
+          .pd-footer {
+            padding: 24px 20px;
+          }
+          .pd-footer-inner {
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 12px;
+          }
+          .pd-footer-links {
+            justify-content: center;
+            gap: 16px;
+          }
+        }
         @media (max-width: 600px) {
           .pd-hero-h1 { font-size: 30px; }
-          .pd-footer-inner { flex-direction: column; align-items: flex-start; }
           .pd-nav-inner {
             height: auto;
             flex-direction: column;
@@ -486,8 +547,13 @@ export default function Home() {
           <h2 className="pd-section-title">Upgrade Your Workspace</h2>
           <p className="pd-section-sub">
             Unlock professional features and unlimited access. Choose the plan<br />
-            that fits your business needs.
+            that fits your business needs. <strong>All plans start with a 7-day free trial!</strong>
           </p>
+
+          {/* 7 Days Free Trial Banner */}
+          <div className="pd-trial-banner">
+            <span>🎁</span> <strong>7-Day Free Trial Scheme:</strong> Start any plan today for ₹0. Try PrintFastX risk-free with no credit card required!
+          </div>
 
           <div className="pd-pricing-cards">
             {/* Monthly */}
@@ -499,6 +565,7 @@ export default function Home() {
               </div>
               <p className="pd-price-period">per month</p>
               <ul className="pd-price-features">
+                <li><span className="check"><CheckIcon /></span> <strong>7-Day Free Trial</strong></li>
                 <li><span className="check"><CheckIcon /></span> QR-Based Order System</li>
                 <li><span className="check"><CheckIcon /></span> Full Dashboard Access</li>
                 <li><span className="check"><CheckIcon /></span> Priority Support</li>
@@ -517,6 +584,7 @@ export default function Home() {
               </div>
               <p className="pd-price-period">for 3 months</p>
               <ul className="pd-price-features">
+                <li><span className="check"><CheckIcon /></span> <strong>7-Day Free Trial</strong></li>
                 <li><span className="check"><CheckIcon /></span> QR-Based Order System</li>
                 <li><span className="check"><CheckIcon /></span> Full Dashboard Access</li>
                 <li><span className="check"><CheckIcon /></span> Priority Support</li>
@@ -536,6 +604,7 @@ export default function Home() {
               </div>
               <p className="pd-price-period">for 6 months</p>
               <ul className="pd-price-features">
+                <li><span className="check"><CheckIcon /></span> <strong>7-Day Free Trial</strong></li>
                 <li><span className="check"><CheckIcon /></span> QR-Based Order System</li>
                 <li><span className="check"><CheckIcon /></span> Full Dashboard Access</li>
                 <li><span className="check"><CheckIcon /></span> Priority Support</li>

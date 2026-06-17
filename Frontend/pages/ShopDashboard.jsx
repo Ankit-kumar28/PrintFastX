@@ -487,11 +487,36 @@ export default function ShopDashboard() {
             justifyContent: 'center',
             margin: '0 auto 24px',
             fontSize: '36px'
-          }}>🚫</div>
-          <h2 style={{ fontSize: '26px', fontWeight: 800, color: '#991b1b', marginBottom: '12px' }}>Your Shop is Blocked</h2>
-          <p style={{ fontSize: '14px', color: '#7f1d1d', lineHeight: 1.6, marginBottom: '32px' }}>
-            Your access has been temporarily suspended by the administrator. Please contact admin support or verify your settings.
+          }}>⏳</div>
+          <h2 style={{ fontSize: '26px', fontWeight: 800, color: '#991b1b', marginBottom: '12px' }}>Validity Expired</h2>
+          <p style={{ fontSize: '14px', color: '#7f1d1d', lineHeight: 1.6, marginBottom: '24px' }}>
+            Your shop's validity has expired or it has been blocked by the admin. Please contact the admin support to renew or reactivate your account.
           </p>
+          
+          <div style={{
+            background: '#fef2f2',
+            border: '1px solid #fee2e2',
+            borderRadius: '16px',
+            padding: '16px',
+            marginBottom: '32px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+            textAlign: 'left'
+          }}>
+            <div style={{ fontSize: '13px', color: '#991b1b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Contact Admin Support
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#7f1d1d' }}>
+              <span>✉️</span>
+              <a href="mailto:helloprintfastx@gail.com" style={{ color: '#ef4444', textDecoration: 'none', fontWeight: 600 }}>helloprintfastx@gail.com</a>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#7f1d1d' }}>
+              <span>💬</span>
+              <a href="https://wa.me/918434362600" target="_blank" rel="noopener noreferrer" style={{ color: '#ef4444', textDecoration: 'none', fontWeight: 600 }}>WhatsApp Support</a>
+            </div>
+          </div>
+
           <button 
             onClick={handleLogout}
             style={{
@@ -503,7 +528,8 @@ export default function ShopDashboard() {
               borderRadius: '12px',
               fontSize: '15px',
               fontWeight: 700,
-              cursor: 'pointer'
+              cursor: 'pointer',
+              transition: 'opacity 0.2s'
             }}
           >
             Logout to Home
