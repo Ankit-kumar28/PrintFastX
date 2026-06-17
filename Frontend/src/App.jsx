@@ -1,6 +1,7 @@
-// src/App.jsx
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { initGA, logPageView } from './utils/analytics';
 
 import Home from '../pages/Home';
 import UploadPage from '../pages/UploadPage';
@@ -62,9 +63,29 @@ function PublicRoute({ children }) {
   return children;
 }
 
+const GA_ID = import.meta.env.VITE_GA_MEASUREMENT_ID;
+
+/**
+ * Route tracker component to dynamically log SPA pageviews to GA4.
+ */
+function AnalyticsTracker() {
+  const location = useLocation();
+
+  useEffect(() => {
+    initGA(GA_ID);
+  }, []);
+
+  useEffect(() => {
+    logPageView(GA_ID, location.pathname + location.search);
+  }, [location]);
+
+  return null;
+}
+
 function App() {
   return (
     <Router>
+      <AnalyticsTracker />
       <Routes>
         {/* Public Routes */}
         <Route path="/" element={<Home />} />

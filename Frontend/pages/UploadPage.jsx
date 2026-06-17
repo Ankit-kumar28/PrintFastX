@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { logEvent } from '../src/utils/analytics';
 import {
   Upload,
   FileText,
@@ -233,6 +234,7 @@ export default function UploadPage() {
       setToken(res.data.token);
       setSuccess(true);
       toast.success("Files submitted successfully!");
+      logEvent('upload_files', 'User Action', priorityPrint ? 'Priority' : 'Standard', files.length);
     } catch (err) {
       toast.error(err.response?.data?.error || "Upload failed");
     } finally {
