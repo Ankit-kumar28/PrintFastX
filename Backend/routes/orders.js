@@ -126,4 +126,67 @@ router.delete('/:token', async (req, res) => {
   }
 });
 
+/**
+ * @route   GET /api/orders/file/:orderId/:fileId
+ * @desc    Get/Download an uploaded file (proxies S3 if STORAGE_TYPE=s3, otherwise serves local file)
+ * @access  Public
+ */
+router.get('/file/:orderId/:fileId', async (req, res) => {
+  try {
+    const { orderId, fileId } = req.params;
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const file = order.files.id(fileId);
+    if (!file) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const download = req.query.download === 'true';
+
+    if (file.fileUrl.startsWith('http')) {
+      // S3 File proxy download
+      try {
+        const { getFileFromS3 } = require('../utils/s3');
+        const { stream, contentType, contentLength } = await getFileFromS3(file.fileUrl);
+
+        res.setHeader('Content-Type', contentType || 'application/octet-stream');
+        if (contentLength) {
+          res.setHeader('Content-Length', contentLength);
+        }
+
+        const safeFilename = file.fileName.replace(/"/g, '\\"');
+        const encodedFilename = encodeURIComponent(file.fileName);
+
+        if (download) {
+          res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`);
+        } else {
+          res.setHeader('Content-Disposition', `inline; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`);
+        }
+
+        stream.pipe(res);
+      } catch (s3Err) {
+        console.error('[S3 Proxy Error]', s3Err);
+        res.status(500).json({ error: 'Failed to retrieve file from S3' });
+      }
+    } else {
+      // Local file download/view
+      const absolutePath = path.join(__dirname, '..', file.fileUrl);
+      if (!fs.existsSync(absolutePath)) {
+        return res.status(404).json({ error: 'Local file not found' });
+      }
+
+      if (download) {
+        res.download(absolutePath, file.fileName);
+      } else {
+        res.sendFile(absolutePath);
+      }
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

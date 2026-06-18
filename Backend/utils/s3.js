@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 
 // Cached S3 Client instance
 let s3ClientInstance = null;
@@ -111,7 +111,52 @@ async function deleteFileFromS3(fileUrl) {
   }
 }
 
+/**
+ * Fetches an object stream from AWS S3 based on its public S3 URL.
+ * 
+ * @param {string} fileUrl - Full public URL of the S3 object.
+ * @returns {Promise<Object>} Object containing the stream, ContentType, and ContentLength.
+ */
+async function getFileFromS3(fileUrl) {
+  if (!fileUrl) {
+    throw new Error('File URL is required');
+  }
+
+  // Verify the URL structure points to Amazon AWS S3
+  if (!fileUrl.includes('.amazonaws.com/')) {
+    throw new Error(`[S3 Storage] URL is not a recognized S3 address: ${fileUrl}`);
+  }
+
+  const s3 = getS3Client();
+  const bucketName = process.env.AWS_S3_BUCKET_NAME;
+
+  if (!bucketName) {
+    throw new Error('[S3 Storage Error] AWS_S3_BUCKET_NAME is not set.');
+  }
+
+  // Extract the object key from the S3 URL
+  const urlParts = fileUrl.split('.amazonaws.com/');
+  if (urlParts.length < 2) {
+    throw new Error(`[S3 Storage] Unable to parse S3 key from URL: ${fileUrl}`);
+  }
+
+  const key = decodeURIComponent(urlParts[1]);
+  const getParams = {
+    Bucket: bucketName,
+    Key: key,
+  };
+
+  const command = new GetObjectCommand(getParams);
+  const response = await s3.send(command);
+  return {
+    stream: response.Body,
+    contentType: response.ContentType,
+    contentLength: response.ContentLength,
+  };
+}
+
 module.exports = {
   uploadBufferToS3,
   deleteFileFromS3,
+  getFileFromS3,
 };
