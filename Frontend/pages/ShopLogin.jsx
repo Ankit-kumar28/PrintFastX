@@ -228,7 +228,7 @@ export default function ShopLogin() {
               <div style={styles.logoBoxLeft}>P</div>
               <h2 style={styles.logoTextLeft}>PrintFastX</h2>
             </div>
-            
+
             <h3 style={{ fontSize: '24px', fontWeight: 800, color: '#ffffff', marginBottom: '28px', lineHeight: 1.3, textAlign: 'left' }}>
               Supercharge your print shop in seconds
             </h3>

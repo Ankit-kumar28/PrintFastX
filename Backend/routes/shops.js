@@ -6,6 +6,7 @@ const { OAuth2Client } = require('google-auth-library');
 const Shop = require('../models/shop');
 const Order = require('../models/order');
 const { auth, adminAuth } = require('../middleware/auth');
+const { sendAdminNotificationEmail, sendShopkeeperApprovalEmail } = require('../utils/mailer');
 
 const router = express.Router();
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -44,6 +45,12 @@ router.post('/register', async (req, res) => {
     });
 
     await shop.save();
+
+    // Send notification email to admin (non-blocking)
+    sendAdminNotificationEmail(shop).catch(err =>
+      console.error('[Mailer] Admin notification error on register:', err)
+    );
+
     res.status(201).json({
       message: 'Shop registered successfully. Waiting for admin approval.',
       shopId
@@ -195,6 +202,11 @@ router.post('/onboard', auth, async (req, res) => {
 
     await shop.save();
 
+    // Send full shop details to admin for review (non-blocking)
+    sendAdminNotificationEmail(shop).catch(err =>
+      console.error('[Mailer] Admin notification error on onboard:', err)
+    );
+
     // Re-sign token since shopId is now assigned
     const token = signToken(shop);
     res.json({
@@ -272,6 +284,13 @@ router.patch('/admin/approve/:shopId', adminAuth, async (req, res) => {
       { new: true }
     );
     if (!shop) return res.status(404).json({ error: 'Shop not found' });
+
+    // Send approval confirmation email to shopkeeper (non-blocking)
+    if (status === 'approved' && shop.email) {
+      sendShopkeeperApprovalEmail(shop).catch(err =>
+        console.error('[Mailer] Shopkeeper approval email error:', err)
+      );
+    }
 
     res.json({ message: `Shop ${status} successfully`, shop });
   } catch (error) {
