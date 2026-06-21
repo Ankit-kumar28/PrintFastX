@@ -1,5 +1,5 @@
 // components/PassportPhotoMaker.jsx  ·  High-Fidelity Passport Photo Maker Studio v4
-// Redesigned with a premium 3-screen wizard layout:
+// Redesigned as a modular passport wizard step component
 // Screen 1: Crop, Adjust, & Dynamic Sizing (MediaPipe face-detection & Pan/Crop modes)
 // Screen 2: Tone Tuning & Advanced Backdrop Studio (Chroma-key, brush eraser, name/date identity strip)
 // Screen 3: Live Matrix Generation & Print Workspace (copies stepper, spacing, margins)
@@ -29,21 +29,26 @@ const PHOTO_4X6_H = 1200;
 const CANVAS_W = 1350;
 const CANVAS_H = 1500;
 
-export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode = 'customer' }) {
-  // ── Editor Mode ───────────────────────────────────────────────────────────
-  const [editorMode, setEditorMode] = useState('document'); // 'document' | 'passport'
-
+export default function PassportPhotoMaker({
+  originalImage,
+  imageLoaded,
+  onClose,
+  onSave,
+  mode = 'customer',
+  wizardStep: propsWizardStep,
+  setWizardStep: propsSetWizardStep
+}) {
   // ── Wizard Workflow ────────────────────────────────────────────────────────
   // step 1: Crop & Size Geometry
   // step 2: Color Tuning, Background & Identity Strip
   // step 3: Matrix sheet generator layout
-  const [wizardStep, setWizardStep] = useState(1);
+  const [localWizardStep, setLocalWizardStep] = useState(1);
+  const wizardStep = propsWizardStep !== undefined ? propsWizardStep : localWizardStep;
+  const setWizardStep = propsSetWizardStep !== undefined ? propsSetWizardStep : setLocalWizardStep;
 
   // ── Image State ────────────────────────────────────────────────────────────
-  const [originalImage, setOriginalImage] = useState(null);
   const [croppedImage, setCroppedImage] = useState(null); // cropped frame from Screen 1
   const [processedAsset, setProcessedAsset] = useState(null); // final baked photo from Screen 2
-  const [imageLoaded, setImageLoaded] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [mpLoaded, setMpLoaded] = useState(false);
 
@@ -59,7 +64,7 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
   const [cropActive, setCropActive] = useState(true);
   const [cropRect, setCropRect] = useState({ x: 225, y: 150, w: 900, h: 1155 }); // relative to canvas
   const [cropRatioLocked, setCropRatioLocked] = useState(true);
-  const [autoRemoveBg, setAutoRemoveBg] = useState(true); // Prelim flag
+  const [autoRemoveBg, setAutoRemoveBg] = useState(true); // AI background cutout
 
   // Dragging states for Crop / Pan
   const cropDragRef = useRef({ active: false, handle: null, startX: 0, startY: 0, startRect: null });
@@ -143,104 +148,6 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
     return null;
   };
 
-  // ── Initialize Image ───────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!imageSource) return;
-    setProcessing(true);
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = async () => {
-      setOriginalImage(img);
-      setCroppedImage(null);
-      setProcessedAsset(null);
-      setImageLoaded(true);
-      setProcessing(false);
-      resetTransforms();
-
-      if (editorMode === 'passport') {
-        // Run MediaPipe Face Detection
-        setProcessing(true);
-        const bbox = await runFaceDetection(img);
-        setProcessing(false);
-
-        const dims = getPhotoDims();
-        const aspect = dims.w / dims.h;
-
-        if (bbox) {
-          setMpLoaded(true);
-          toast.success("🤖 MediaPipe Face Centered!");
-          // Calculate canvas scaling to match image coordinates
-          const canvasAspect = CANVAS_W / CANVAS_H;
-          const imgAspect = img.width / img.height;
-          let drawW, drawH;
-          if (imgAspect > canvasAspect) {
-            drawW = CANVAS_W;
-            drawH = CANVAS_W / imgAspect;
-          } else {
-            drawH = CANVAS_H;
-            drawW = CANVAS_H * imgAspect;
-          }
-
-          const scaleX = drawW / img.width;
-          const scaleY = drawH / img.height;
-
-          const fx = bbox.originX * scaleX + (CANVAS_W - drawW) / 2;
-          const fy = bbox.originY * scaleY + (CANVAS_H - drawH) / 2;
-          const fw = bbox.width * scaleX;
-          const fh = bbox.height * scaleY;
-
-          // Auto crop around head/shoulders: padding ~60% height
-          const padH = fh * 0.8;
-          const targetH = fh + padH * 2;
-          const targetW = targetH * aspect;
-
-          const cx = fx + fw / 2;
-          const cy = fy + fh / 2;
-
-          const fixedCropH = CANVAS_H * 0.8;
-          const fixedCropW = fixedCropH * aspect;
-
-          setCropRect({
-            x: Math.round((CANVAS_W - fixedCropW) / 2),
-            y: Math.round((CANVAS_H - fixedCropH) / 2),
-            w: Math.round(fixedCropW),
-            h: Math.round(fixedCropH)
-          });
-
-          const neededZoom = (fixedCropH / targetH) * 100;
-          setZoom(Math.round(neededZoom));
-
-          const Z = neededZoom / 100;
-          setPanX(Math.round(-(cx - CANVAS_W / 2) * Z));
-          setPanY(Math.round(-(cy - CANVAS_H / 2) * Z));
-        } else {
-          // Fallback default crop box
-          const h = Math.round(CANVAS_H * 0.72);
-          const w = h * aspect;
-          setCropRect({
-            x: Math.round((CANVAS_W - w) / 2),
-            y: Math.round((CANVAS_H - h) / 2),
-            w: Math.round(w),
-            h: Math.round(h)
-          });
-        }
-      } else {
-        // Document Mode: Default full size crop with some padding
-        setCropRect({
-          x: 20,
-          y: 20,
-          w: CANVAS_W - 40,
-          h: CANVAS_H - 40
-        });
-      }
-    };
-    img.onerror = () => {
-      toast.error('Failed to load target image');
-      setProcessing(false);
-    };
-    img.src = imageSource instanceof File ? URL.createObjectURL(imageSource) : imageSource;
-  }, [imageSource, editorMode]);
-
   const initMaskCanvas = () => {
     if (!maskCanvasRef.current) {
       maskCanvasRef.current = document.createElement('canvas');
@@ -261,6 +168,87 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
     setBgMethod('none');
     initMaskCanvas();
   };
+
+  // ── Initialize Image ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!originalImage || !imageLoaded) return;
+    
+    const initPassport = async () => {
+      setProcessing(true);
+      setCroppedImage(null);
+      setProcessedAsset(null);
+      resetTransforms();
+
+      // Run MediaPipe Face Detection
+      const bbox = await runFaceDetection(originalImage);
+      setProcessing(false);
+
+      const dims = getPhotoDims();
+      const aspect = dims.w / dims.h;
+
+      if (bbox) {
+        setMpLoaded(true);
+        toast.success("🤖 MediaPipe Face Centered!");
+        
+        const canvasAspect = CANVAS_W / CANVAS_H;
+        const imgAspect = originalImage.width / originalImage.height;
+        let drawW, drawH;
+        if (imgAspect > canvasAspect) {
+          drawW = CANVAS_W;
+          drawH = CANVAS_W / imgAspect;
+        } else {
+          drawH = CANVAS_H;
+          drawW = CANVAS_H * imgAspect;
+        }
+
+        const scaleX = drawW / originalImage.width;
+        const scaleY = drawH / originalImage.height;
+
+        const fx = bbox.originX * scaleX + (CANVAS_W - drawW) / 2;
+        const fy = bbox.originY * scaleY + (CANVAS_H - drawH) / 2;
+        const fw = bbox.width * scaleX;
+        const fh = bbox.height * scaleY;
+
+        // Auto crop around head/shoulders: padding ~60% height
+        const padH = fh * 0.8;
+        const targetH = fh + padH * 2;
+        const targetW = targetH * aspect;
+
+        const cx = fx + fw / 2;
+        const cy = fy + fh / 2;
+
+        const fixedCropH = CANVAS_H * 0.8;
+        const fixedCropW = fixedCropH * aspect;
+
+        setCropRect({
+          x: Math.round((CANVAS_W - fixedCropW) / 2),
+          y: Math.round((CANVAS_H - fixedCropH) / 2),
+          w: Math.round(fixedCropW),
+          h: Math.round(fixedCropH)
+        });
+
+        const neededZoom = (fixedCropH / targetH) * 100;
+        setZoom(Math.round(neededZoom));
+
+        const Z = neededZoom / 100;
+        setPanX(Math.round(-(cx - CANVAS_W / 2) * Z));
+        setPanY(Math.round(-(cy - CANVAS_H / 2) * Z));
+      } else {
+        setMpLoaded(false);
+        // Fallback default crop box
+        const h = Math.round(CANVAS_H * 0.72);
+        const w = h * aspect;
+        setCropRect({
+          x: Math.round((CANVAS_W - w) / 2),
+          y: Math.round((CANVAS_H - h) / 2),
+          w: Math.round(w),
+          h: Math.round(h)
+        });
+      }
+    };
+
+    initPassport();
+  }, [originalImage, imageLoaded]);
 
   // Adjust aspect ratio of crop rectangle when sizing preset changes
   useEffect(() => {
@@ -283,7 +271,7 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
     if (!imageLoaded || !originalImage || !editorCanvasRef.current) return;
     drawEditor();
   }, [
-    editorMode, wizardStep, imageLoaded, originalImage, croppedImage,
+    wizardStep, imageLoaded, originalImage, croppedImage,
     zoom, rotation, panX, panY, cropRect,
     brightness, saturation, contrast, sharpness, bgColor,
     bgMethod, chromaColor, tolerance, brushSize,
@@ -387,17 +375,11 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
 
     ctx.clearRect(0, 0, w, h);
 
-    if (editorMode === 'document' || wizardStep === 1) {
-      // ── SCREEN 1 & DOCUMENT MODE: Crop layout ──
-      // Checkerboard underlay
+    if (wizardStep === 1) {
+      // ── SCREEN 1: Crop layout ──
       drawCheckerboard(ctx, w, h);
 
       ctx.save();
-      // Apply Tone Corrections if in document mode
-      if (editorMode === 'document') {
-        ctx.filter = `brightness(${brightness}%) saturate(${saturation}%) contrast(${contrast}%)`;
-      }
-      // Translate to canvas center + pan positions
       ctx.translate(w / 2 + panX, h / 2 + panY);
       ctx.rotate((rotation * Math.PI) / 180);
 
@@ -444,39 +426,29 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
         const { x: cx, y: cy, w: cw, h: ch } = cropRect;
 
         const drawCropHandle = (hx, hy, hw, hh) => {
-          // White shadow backing for maximum contrast on any image background
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(hx - 2, hy - 2, hw + 4, hh + 4);
-          // Main Indigo handle
           ctx.fillStyle = '#6366f1';
           ctx.fillRect(hx, hy, hw, hh);
         };
 
-        // 1. Corner L-brackets
-        // Top-Left
+        // Corner L-brackets
         drawCropHandle(cx - thick / 2, cy - thick / 2, len, thick);
         drawCropHandle(cx - thick / 2, cy - thick / 2, thick, len);
 
-        // Top-Right
         drawCropHandle(cx + cw - len + thick / 2, cy - thick / 2, len, thick);
         drawCropHandle(cx + cw - thick / 2, cy - thick / 2, thick, len);
 
-        // Bottom-Left
         drawCropHandle(cx - thick / 2, cy + ch - thick / 2, len, thick);
         drawCropHandle(cx - thick / 2, cy + ch - len + thick / 2, thick, len);
 
-        // Bottom-Right
         drawCropHandle(cx + cw - len + thick / 2, cy + ch - thick / 2, len, thick);
         drawCropHandle(cx + cw - thick / 2, cy + ch - len + thick / 2, thick, len);
 
-        // 2. Edge straight bars
-        // Top edge
+        // Edge straight bars
         drawCropHandle(cx + cw / 2 - len / 2, cy - thick / 2, len, thick);
-        // Bottom edge
         drawCropHandle(cx + cw / 2 - len / 2, cy + ch - thick / 2, len, thick);
-        // Left edge
         drawCropHandle(cx - thick / 2, cy + ch / 2 - len / 2, thick, len);
-        // Right edge
         drawCropHandle(cx + cw - thick / 2, cy + ch / 2 - len / 2, thick, len);
 
         ctx.restore();
@@ -503,7 +475,6 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
       // Apply Tone Corrections and draw
       tCtx.save();
       tCtx.filter = `brightness(${brightness}%) saturate(${saturation}%) contrast(${contrast}%)`;
-      // Draw image fitted exactly to the canvas
       tCtx.drawImage(imgToRender, 0, 0, w, h);
       tCtx.restore();
 
@@ -524,65 +495,25 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
   // ── Crop Extraction ────────────────────────────────────────────────────────
   const executeCrop = () => {
     if (!cropRect || !editorCanvasRef.current || !originalImage) return null;
-    const canvas = editorCanvasRef.current;
     const { x, y, w, h } = cropRect;
     if (w < 20 || h < 20) return null;
 
     const cropped = document.createElement('canvas');
     const ctx = cropped.getContext('2d');
 
-    // Draw the active canvas crop coordinates onto a clean temp canvas
-    if (editorMode === 'document') {
-        // Document mode: extract from original filters without UI overlay, BUT AT ORIGINAL RESOLUTION
-        const { drawW, drawH } = calcFitDims(originalImage, CANVAS_W, CANVAS_H);
-        
-        // Calculate the scale factor to restore original resolution
-        // (the ratio between the original image and how it was scaled to fit the 450x500 preview)
-        const hrScale = originalImage.width / drawW;
-        
-        const hrCanvasW = Math.round(CANVAS_W * hrScale);
-        const hrCanvasH = Math.round(CANVAS_H * hrScale);
-        
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = hrCanvasW;
-        tempCanvas.height = hrCanvasH;
-        const tCtx = tempCanvas.getContext('2d');
-        
-        tCtx.save();
-        tCtx.filter = `brightness(${brightness}%) saturate(${saturation}%) contrast(${contrast}%)`;
-        tCtx.translate(hrCanvasW / 2 + panX * hrScale, hrCanvasH / 2 + panY * hrScale);
-        tCtx.rotate((rotation * Math.PI) / 180);
-        
-        const scaleVal = zoom / 100;
-        const dW = drawW * scaleVal * hrScale;
-        const dH = drawH * scaleVal * hrScale;
-        tCtx.drawImage(originalImage, -dW / 2, -dH / 2, dW, dH);
-        tCtx.restore();
-
-        if (sharpness > 0) applySharpness(tCtx, hrCanvasW, hrCanvasH, sharpness);
-
-        const hrX = Math.round(x * hrScale);
-        const hrY = Math.round(y * hrScale);
-        const hrW = Math.round(w * hrScale);
-        const hrH = Math.round(h * hrScale);
-
-        cropped.width = hrW;
-        cropped.height = hrH;
-        ctx.drawImage(tempCanvas, hrX, hrY, hrW, hrH, 0, 0, hrW, hrH);
-    } else {
-        cropped.width = w;
-        cropped.height = h;
-        // Passport mode Step 1: redraw without filters to extract pure cropped image
-        ctx.save();
-        ctx.translate(CANVAS_W / 2 + panX - x, CANVAS_H / 2 + panY - y);
-        ctx.rotate((rotation * Math.PI) / 180);
-        const { drawW, drawH } = calcFitDims(originalImage, CANVAS_W, CANVAS_H);
-        const scaleVal = zoom / 100;
-        const dW = drawW * scaleVal;
-        const dH = drawH * scaleVal;
-        ctx.drawImage(originalImage, -dW / 2, -dH / 2, dW, dH);
-        ctx.restore();
-    }
+    cropped.width = w;
+    cropped.height = h;
+    
+    // Passport mode Step 1: redraw without filters to extract pure cropped image
+    ctx.save();
+    ctx.translate(CANVAS_W / 2 + panX - x, CANVAS_H / 2 + panY - y);
+    ctx.rotate((rotation * Math.PI) / 180);
+    const { drawW, drawH } = calcFitDims(originalImage, CANVAS_W, CANVAS_H);
+    const scaleVal = zoom / 100;
+    const dW = drawW * scaleVal;
+    const dH = drawH * scaleVal;
+    ctx.drawImage(originalImage, -dW / 2, -dH / 2, dW, dH);
+    ctx.restore();
 
     const img = new Image();
     img.src = cropped.toDataURL('image/jpeg', 0.95);
@@ -625,7 +556,6 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
     }
 
     setProcessing(true);
-    // Load image fully
     cropped.onload = async () => {
       setCroppedImage(cropped);
 
@@ -887,7 +817,7 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
 
   const getHandleAt = (x, y) => {
     if (!cropRect) return null;
-    const hs = 10;
+    const hs = 15;
     const { x: cx, y: cy, w: cw, h: ch } = cropRect;
     const inRect = (px, py, rx, ry, rw, rh) => px >= rx && px <= rx + rw && py >= ry && py <= ry + rh;
 
@@ -919,7 +849,6 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
         ctx.moveTo(x, y);
         drawEditor();
       } else if (bgMethod === 'chroma') {
-        // Sample color clicked
         const canvasCtx = editorCanvasRef.current.getContext('2d');
         const px = canvasCtx.getImageData(x, y, 1, 1).data;
         if (px[3] > 0) {
@@ -1018,16 +947,13 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
           if (handle.includes('l')) { nx += dx; nw -= dx; }
           if (handle.includes('t')) { ny += dy; nh -= dy; }
 
-          if (editorMode === 'passport') {
-            if (handle === 'br' || handle === 'r' || handle === 'b') nh = nw / ratio;
-            else if (handle === 'tl' || handle === 'l' || handle === 't') {
-              nh = nw / ratio;
-              ny = startRect.y - (nh - startRect.h);
-            }
+          if (handle === 'br' || handle === 'r' || handle === 'b') nh = nw / ratio;
+          else if (handle === 'tl' || handle === 'l' || handle === 't') {
+            nh = nw / ratio;
+            ny = startRect.y - (nh - startRect.h);
           }
         }
 
-        // Limit boundaries
         nw = Math.max(40, Math.min(CANVAS_W - nx, nw));
         nh = Math.max(40, Math.min(CANVAS_H - ny, nh));
 
@@ -1040,14 +966,6 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
     isBrushing.current = false;
     cropDragRef.current.active = false;
     panDragRef.current.active = false;
-  };
-
-  // ── Output Processing & Save ───────────────────────────────────────────────
-  const dl = (canvas, name) => {
-    const a = document.createElement('a');
-    a.href = canvas.toDataURL('image/jpeg', 0.95);
-    a.download = name;
-    a.click();
   };
 
   const handleSavePrintFile = async () => {
@@ -1126,7 +1044,10 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
 
   const downloadSheetJpg = () => {
     const canvas = buildSheetCanvas();
-    dl(canvas, `passport_matrix_${paperSize}.jpg`);
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/jpeg', 0.95);
+    a.download = `passport_matrix_${paperSize}.jpg`;
+    a.click();
     toast.success("Downloaded HD matrix sheet!");
   };
 
@@ -1134,1114 +1055,683 @@ export default function PassportPhotoMaker({ imageSource, onClose, onSave, mode 
     if (!processedAsset) return;
     const dims = getPhotoDims();
     const canvas = buildOutputCanvas(mmToPx(dims.w), mmToPx(dims.h));
-    dl(canvas, 'passport_single.jpg');
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/jpeg', 0.95);
+    a.download = 'passport_single.jpg';
+    a.click();
     toast.success("Downloaded single asset!");
   };
 
-  const handleDocumentDownload = (format) => {
-    const cropped = executeCrop();
-    if (!cropped) {
-      toast.error("Please select a crop area");
-      return;
-    }
-    
-    // Wait for image to load to get dimensions
-    cropped.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = cropped.width;
-      canvas.height = cropped.height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(cropped, 0, 0);
-
-      if (format === 'pdf') {
-        const doc = new jsPDF({
-          orientation: cropped.width > cropped.height ? 'landscape' : 'portrait',
-          unit: 'px',
-          format: [cropped.width, cropped.height]
-        });
-        doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, cropped.width, cropped.height);
-        doc.save(`document_edit_${Date.now()}.pdf`);
-        toast.success("Downloaded PDF!");
-      } else {
-        const type = format === 'png' ? 'image/png' : 'image/jpeg';
-        const a = document.createElement('a');
-        a.href = canvas.toDataURL(type, 0.95);
-        a.download = `document_edit_${Date.now()}.${format}`;
-        a.click();
-        toast.success(`Downloaded ${format.toUpperCase()}!`);
-      }
-    };
-  };
-
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={S.overlay} onClick={onClose}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
-        .studio-modal * { box-sizing: border-box; }
-        
-        /* Premium custom dark scrollbars */
-        .studio-scroll::-webkit-scrollbar { width: 6px; }
-        .studio-scroll::-webkit-scrollbar-track { background: rgba(30, 41, 59, 0.5); }
-        .studio-scroll::-webkit-scrollbar-thumb { background: #2f75e6ff; border-radius: 4px; }
-        
-        /* Modern styling sliders */
-        .studio-modal input[type=range] {
-          -webkit-appearance: none; appearance: none;
-          height: 6px; border-radius: 3px; background: #334155;
-          outline: none; cursor: pointer; transition: all 0.2s;
-        }
-        .studio-modal input[type=range]:hover { background: #475569; }
-        .studio-modal input[type=range]::-webkit-slider-thumb {
-          -webkit-appearance: none; width: 16px; height: 16px;
-          border-radius: 50%; background: #3b82f6; border: 2px solid #fff;
-          box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); transition: transform 0.1s;
-        }
-        .studio-modal input[type=range]::-webkit-slider-thumb:active {
-          transform: scale(1.25);
-        }
-        
-        /* Hover micro animations */
-        .btn-action { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-        .btn-action:hover { transform: translateY(-1.5px); filter: brightness(1.1); }
-        .btn-action:active { transform: translateY(0); }
-        
-        .opt-card { transition: all 0.2s; border: 2px solid #334155; }
-        .opt-card:hover { border-color: #3b82f6; background: rgba(59, 130, 246, 0.05); }
-        .opt-card.active { border-color: #3b82f6; background: rgba(59, 130, 246, 0.12); box-shadow: 0 0 12px rgba(59, 130, 246, 0.2); }
-        
-        @keyframes spinner-spin {
-          to { transform: rotate(360deg); }
-        }
-        .spinner { animation: spinner-spin 1s linear infinite; }
-      `}</style>
-
-      <div className="studio-modal" style={S.card} onClick={e => e.stopPropagation()}>
-        
-        {/* ── HEADER & STEPPER ── */}
-        <div style={S.header}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <h3 style={S.title}>⚙️ Image Editor</h3>
-              <select 
-                value={editorMode}
-                onChange={e => {
-                  setEditorMode(e.target.value);
-                  setWizardStep(1);
-                  resetTransforms();
-                  setCropRect({ x: 75, y: 50, w: 300, h: 385 });
+    <div style={S.screenWrapper}>
+      {wizardStep === 1 && (
+        <div style={S.screenWrapper}>
+          {/* Left Column: Interactive Canvas Area */}
+          <div style={S.leftPane}>
+            <div style={S.canvasOuter}>
+              {processing && (
+                <div style={S.loadingOverlay}>
+                  <RefreshCw size={36} className="spinner" color="#0d9488"/>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569', marginTop: '10px' }}>
+                    Processing image...
+                  </span>
+                </div>
+              )}
+              
+              <canvas
+                ref={editorCanvasRef}
+                width={CANVAS_W}
+                height={CANVAS_H}
+                onMouseDown={handleStartDrag}
+                onMouseMove={handleDrag}
+                onMouseUp={handleStopDrag}
+                onMouseLeave={handleStopDrag}
+                onTouchStart={handleStartDrag}
+                onTouchMove={handleDrag}
+                onTouchEnd={handleStopDrag}
+                style={{
+                  ...S.mainCanvas,
+                  cursor: dragMode === 'pan' ? 'grab' : 'crosshair'
                 }}
-                style={S.modeDropdown}
-              >
-                <option value="document">Standard Document Editor</option>
-                <option value="passport">Passport Photo Maker</option>
-              </select>
+              />
             </div>
-            <p style={S.subtitle}>
-              {editorMode === 'document' ? 'Edit, tune, and export your documents easily' : 'Professional-grade photo centering & matrix layout'}
-            </p>
+
+            {/* Sub-canvas Control Bar */}
+            <div style={{ ...S.sliderToolbar, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button
+                  onClick={() => setCropRect({ x: 20, y: 20, w: CANVAS_W - 40, h: CANVAS_H - 40 })}
+                  style={S.btnSecondary}
+                  className="btn-action"
+                >
+                  <Maximize size={14} style={{ marginRight: '6px' }}/>
+                  Full Size Selection
+                </button>
+                <button
+                  onClick={() => setRotation(r => r - 90)}
+                  style={S.btnSecondary}
+                  className="btn-action"
+                >
+                  <RotateCcw size={14} style={{ marginRight: '6px' }}/>
+                  Rotate Left
+                </button>
+                <button
+                  onClick={() => setRotation(r => r + 90)}
+                  style={S.btnSecondary}
+                  className="btn-action"
+                >
+                  <RotateCw size={14} style={{ marginRight: '6px' }}/>
+                  Rotate Right
+                </button>
+                <button
+                  onClick={() => setCropActive(!cropActive)}
+                  style={S.btnSecondary}
+                  className="btn-action"
+                >
+                  <CropIcon size={14} style={{ marginRight: '6px' }}/>
+                  Crop Selection
+                </button>
+              </div>
+
+              {/* Sliders Container */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '420px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={S.sliderLabelRow}>
+                    <span>🔎 Zoom Level</span>
+                    <span>{zoom}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="20"
+                    max="200"
+                    value={zoom}
+                    onChange={e => setZoom(parseInt(e.target.value))}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={S.sliderLabelRow}>
+                    <span>🔄 Fine-Grain Rotation</span>
+                    <span>{rotation}°</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-180"
+                    max="180"
+                    value={rotation}
+                    onChange={e => setRotation(parseInt(e.target.value))}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-          
-          {/* Stepper Steps UI (Only in Passport Mode) */}
-          {editorMode === 'passport' && (
-            <div style={S.stepperContainer}>
-              <div style={{ ...S.stepBubble, ...(wizardStep >= 1 ? S.stepActive : {}) }}>
-                <Scissors size={14}/> <span>Crop & Size</span>
-              </div>
-              <div style={S.stepLine}/>
-              <div style={{ ...S.stepBubble, ...(wizardStep >= 2 ? S.stepActive : {}) }}>
-                <Sun size={14}/> <span>Tone & Background</span>
-              </div>
-              <div style={S.stepLine}/>
-              <div style={{ ...S.stepBubble, ...(wizardStep >= 3 ? S.stepActive : {}) }}>
-                <Grid size={14}/> <span>Matrix Layout</span>
-              </div>
-            </div>
-          )}
 
-          <button onClick={onClose} style={S.closeBtn} className="btn-action"><X size={20} /></button>
-        </div>
+          {/* Right Column: Settings */}
+          <div style={S.rightPane}>
+            <div className="studio-scroll" style={S.paneContent}>
+              <div style={S.panelSegment}>
+                <h4 style={S.segmentTitle}>📏 Document Sizing Presets</h4>
+                <select
+                  value={dimensionPreset}
+                  onChange={e => setDimensionPreset(e.target.value)}
+                  style={S.dropdownInput}
+                >
+                  {DIMENSION_PRESETS.map(p => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
+                </select>
 
-        {/* ── MAIN STUDIO WORKSPACE ── */}
-        <div style={S.bodyContainer}>
-          
-          {/* =================================================================
-              DOCUMENT MODE & PASSPORT SCREEN 1 (Shared layout)
-              ================================================================= */}
-          {(editorMode === 'document' || wizardStep === 1) && (
-            <div style={S.screenWrapper}>
-              
-              {/* Left Column: Interactive Canvas Area */}
-              <div style={S.leftPane}>
-                {/* Canvas Container */}
-                <div style={S.canvasOuter}>
-                  {processing && (
-                    <div style={S.loadingOverlay}>
-                      <RefreshCw size={36} className="spinner" color="#0d9488"/>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569', marginTop: '10px' }}>
-                        Processing image...
-                      </span>
-                    </div>
-                  )}
-                  
-                  <canvas
-                    ref={editorCanvasRef}
-                    width={CANVAS_W}
-                    height={CANVAS_H}
-                    onMouseDown={handleStartDrag}
-                    onMouseMove={handleDrag}
-                    onMouseUp={handleStopDrag}
-                    onMouseLeave={handleStopDrag}
-                    onTouchStart={handleStartDrag}
-                    onTouchMove={handleDrag}
-                    onTouchEnd={handleStopDrag}
-                    style={{
-                      ...S.mainCanvas,
-                      cursor: dragMode === 'pan' ? 'grab' : 'crosshair'
-                    }}
-                  />
-                </div>
-
-                {/* Sub-canvas Control Bar (Zoom, Rotation & Action Buttons) */}
-                <div style={{ ...S.sliderToolbar, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  
-                  {/* Action Buttons */}
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                    <button
-                      onClick={() => setCropRect({ x: 20, y: 20, w: CANVAS_W - 40, h: CANVAS_H - 40 })}
-                      style={{ ...S.btnSecondary, background: '#f8fafc', color: '#0f172a', padding: '8px 12px', borderRadius: '10px' }}
-                      className="btn-action"
-                    >
-                      <Maximize size={14} style={{ marginRight: '6px' }}/>
-                      Full Size Selection
-                    </button>
-                    <button
-                      onClick={() => setRotation(r => r - 90)}
-                      style={{ ...S.btnSecondary, background: '#f8fafc', color: '#0f172a', padding: '8px 12px', borderRadius: '10px' }}
-                      className="btn-action"
-                    >
-                      <RotateCcw size={14} style={{ marginRight: '6px' }}/>
-                      Rotate Left
-                    </button>
-                    <button
-                      onClick={() => setRotation(r => r + 90)}
-                      style={{ ...S.btnSecondary, background: '#f8fafc', color: '#0f172a', padding: '8px 12px', borderRadius: '10px' }}
-                      className="btn-action"
-                    >
-                      <RotateCw size={14} style={{ marginRight: '6px' }}/>
-                      Rotate Right
-                    </button>
-                    {editorMode === 'passport' && (
-                      <button
-                        onClick={() => setCropActive(!cropActive)}
-                        style={{ ...S.btnSecondary, background: '#f8fafc', color: '#0f172a', padding: '8px 12px', borderRadius: '10px' }}
-                        className="btn-action"
-                      >
-                        <CropIcon size={14} style={{ marginRight: '6px' }}/>
-                        Crop Selection
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Sliders Container (Restricted Width) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '420px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <div style={S.sliderLabelRow}>
-                        <span>🔎 Zoom Level</span>
-                        <span>{zoom}%</span>
-                      </div>
+                {dimensionPreset === 'custom' && (
+                  <div style={S.customInputGrid}>
+                    <div>
+                      <label style={S.miniLabel}>Width (mm)</label>
                       <input
-                        type="range"
-                        min="20"
-                        max="200"
-                        value={zoom}
-                        onChange={e => setZoom(parseInt(e.target.value))}
-                        style={{ width: '100%' }}
+                        type="number"
+                        value={customW}
+                        onChange={e => setCustomW(e.target.value)}
+                        style={S.numberInput}
                       />
                     </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <div style={S.sliderLabelRow}>
-                        <span>🔄 Fine-Grain Rotation</span>
-                        <span>{rotation}°</span>
-                      </div>
+                    <div>
+                      <label style={S.miniLabel}>Height (mm)</label>
                       <input
-                        type="range"
-                        min="-180"
-                        max="180"
-                        value={rotation}
-                        onChange={e => setRotation(parseInt(e.target.value))}
-                        style={{ width: '100%' }}
+                        type="number"
+                        value={customH}
+                        onChange={e => setCustomH(e.target.value)}
+                        style={S.numberInput}
                       />
                     </div>
                   </div>
+                )}
+              </div>
 
+              {/* Face Detection State Notification */}
+              <div style={{ ...S.panelSegment, borderLeft: mpLoaded ? '3px solid #10b981' : '3px solid #f59e0b', background: '#f8fafc' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '18px' }}>{mpLoaded ? '🤖' : '✨'}</span>
+                  <div>
+                    <p style={{ fontSize: '12px', fontWeight: 700, margin: 0, color: '#0f172a' }}>
+                      {mpLoaded ? 'MediaPipe Auto-Centered' : 'Face Centering Fallback'}
+                    </p>
+                    <p style={{ fontSize: '11px', margin: 0, color: '#475569' }}>
+                      {mpLoaded ? 'Crop bounds locked automatically around the face.' : 'No face found or offline. Position crop manually.'}
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              {/* Right Column: Dynamic Settings depending on Mode */}
-              <div style={S.rightPane}>
-                <div className="studio-scroll" style={S.paneContent}>
-                  
-                  {editorMode === 'passport' ? (
-                    <>
-                      {/* Preset Dropdown Block */}
-                      <div style={S.panelSegment}>
-                        <h4 style={S.segmentTitle}>📏 Document Sizing Presets</h4>
-                        <select
-                          value={dimensionPreset}
-                          onChange={e => setDimensionPreset(e.target.value)}
-                          style={S.dropdownInput}
-                        >
-                          {DIMENSION_PRESETS.map(p => (
-                            <option key={p.id} value={p.id}>{p.label}</option>
-                          ))}
-                        </select>
-
-                        {/* Custom Width/Height Dimensions Box */}
-                        {dimensionPreset === 'custom' && (
-                          <div style={S.customInputGrid}>
-                            <div>
-                              <label style={S.miniLabel}>Width (mm)</label>
-                              <input
-                                type="number"
-                                value={customW}
-                                onChange={e => setCustomW(e.target.value)}
-                                style={S.numberInput}
-                              />
-                            </div>
-                            <div>
-                              <label style={S.miniLabel}>Height (mm)</label>
-                              <input
-                                type="number"
-                                value={customH}
-                                onChange={e => setCustomH(e.target.value)}
-                                style={S.numberInput}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Face Detection State Notification */}
-                      <div style={{ ...S.panelSegment, borderLeft: mpLoaded ? '3px solid #10b981' : '3px solid #f59e0b', background: '#f8fafc' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '18px' }}>{mpLoaded ? '🤖' : '✨'}</span>
-                          <div>
-                            <p style={{ fontSize: '12px', fontWeight: 700, margin: 0, color: '#0f172a' }}>
-                              {mpLoaded ? 'MediaPipe Auto-Centered' : 'Face Centering Fallback'}
-                            </p>
-                            <p style={{ fontSize: '11px', margin: 0, color: '#475569' }}>
-                              {mpLoaded ? 'Crop bounds locked automatically around the face.' : 'No face found or offline. Position crop manually.'}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Auto Remove Background Checkbox */}
-                      <div style={S.panelSegment}>
-                        <label style={S.checkboxCard} className="btn-action">
-                          <input
-                            type="checkbox"
-                            checked={autoRemoveBg}
-                            onChange={e => setAutoRemoveBg(e.target.checked)}
-                            style={S.checkboxDot}
-                          />
-                          <div style={{ flex: 1 }}>
-                            <p style={S.checkboxTitle}>🤖 Auto-Remove Background</p>
-                            <p style={S.checkboxDesc}>Uses Cloud AI cutout to isolate subject inside the crop box.</p>
-                          </div>
-                        </label>
-                      </div>
-                    </>
-                  ) : (
-                    /* DOCUMENT MODE SETTINGS */
-                    <>
-                      <div style={S.panelSegment}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                          <h4 style={{ ...S.segmentTitle, margin: 0 }}>🎨 Image Tuning</h4>
-                          <button
-                            onClick={() => {
-                              setBrightness(100);
-                              setContrast(100);
-                              setSaturation(100);
-                              setSharpness(0);
-                            }}
-                            style={S.microBtn}
-                            className="btn-action"
-                          >
-                            🔄 Reset Tuning
-                          </button>
-                        </div>
-                        <div style={S.slidersGrid}>
-                          <div style={S.sliderControlGroup}>
-                            <div style={S.sliderLabelRow}>
-                              <span>🔆 Brightness</span>
-                              <span>{brightness}%</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="50"
-                              max="150"
-                              value={brightness}
-                              onChange={e => setBrightness(parseInt(e.target.value))}
-                            />
-                          </div>
-
-                          <div style={S.sliderControlGroup}>
-                            <div style={S.sliderLabelRow}>
-                              <span>⚡ Contrast</span>
-                              <span>{contrast}%</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="50"
-                              max="150"
-                              value={contrast}
-                              onChange={e => setContrast(parseInt(e.target.value))}
-                            />
-                          </div>
-
-                          <div style={S.sliderControlGroup}>
-                            <div style={S.sliderLabelRow}>
-                              <span>🌈 Saturation</span>
-                              <span>{saturation}%</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="0"
-                              max="200"
-                              value={saturation}
-                              onChange={e => setSaturation(parseInt(e.target.value))}
-                            />
-                          </div>
-                          <div style={S.sliderControlGroup}>
-                            <div style={S.sliderLabelRow}>
-                              <span>✨ Sharpness</span>
-                              <span>{sharpness}%</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="0"
-                              max="100"
-                              value={sharpness}
-                              onChange={e => setSharpness(parseInt(e.target.value))}
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div style={S.panelSegment}>
-                        <h4 style={S.segmentTitle}>📥 Export & Download</h4>
-                        <div style={{ ...S.sliderControlGroup, marginBottom: '16px' }}>
-                          <div style={S.sliderLabelRow}>
-                            <span>🖨️ Export DPI (Quality)</span>
-                            <span>{dpi} DPI</span>
-                          </div>
-                          <input
-                            type="range"
-                            min="72"
-                            max="1200"
-                            step="24"
-                            value={dpi}
-                            onChange={e => setDpi(parseInt(e.target.value))}
-                            style={{ width: '100%' }}
-                          />
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          <button onClick={() => handleDocumentDownload('jpg')} style={S.btnSecondary} className="btn-action">
-                            <Download size={14} style={{ marginRight: '6px' }}/> Download as JPG
-                          </button>
-                          <button onClick={() => handleDocumentDownload('png')} style={S.btnSecondary} className="btn-action">
-                            <Download size={14} style={{ marginRight: '6px' }}/> Download as PNG
-                          </button>
-                          <button onClick={() => handleDocumentDownload('pdf')} style={S.btnSecondary} className="btn-action">
-                            <FileText size={14} style={{ marginRight: '6px' }}/> Download as PDF
-                          </button>
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                </div>
-
-                {/* Footer Action button */}
-                <div style={S.paneFooter}>
-                  {editorMode === 'passport' ? (
-                    <button
-                      onClick={handleNextToStep2}
-                      style={S.btnPrimaryLarge}
-                      className="btn-action"
-                    >
-                      Next: Tone & Backdrop Fill ➡️
-                    </button>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
-                      <button
-                        onClick={() => {
-                          const cropped = executeCrop();
-                          if (cropped) {
-                             cropped.onload = () => {
-                               onSave({ file: new File([cropped.src], `edited_${Date.now()}.jpg`, { type: 'image/jpeg' }), name: `edited_${Date.now()}.jpg` });
-                               onClose();
-                             };
-                          } else {
-                            toast.error("Please select a crop area");
-                          }
-                        }}
-                        style={S.btnPrimaryLarge}
-                        className="btn-action"
-                      >
-                        <Check size={16} style={{ marginRight: '6px' }}/> Apply Changes & Add to Queue
-                      </button>
-                      <button
-                        onClick={() => {
-                          const cropped = executeCrop();
-                          if (cropped) {
-                            cropped.onload = () => {
-                              const canvas = document.createElement('canvas');
-                              canvas.width = cropped.width;
-                              canvas.height = cropped.height;
-                              const ctx = canvas.getContext('2d');
-                              ctx.drawImage(cropped, 0, 0);
-
-                              const doc = new jsPDF({
-                                orientation: cropped.width > cropped.height ? 'landscape' : 'portrait',
-                                unit: 'px',
-                                format: [cropped.width, cropped.height]
-                              });
-                              doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, cropped.width, cropped.height);
-                              const pdfUrl = doc.output('bloburl');
-                              window.open(pdfUrl, '_blank');
-                            };
-                          } else {
-                            toast.error("Please select a crop area");
-                          }
-                        }}
-                        style={{ ...S.btnPrimaryLarge, background: '#0f172a', color: '#ffffff' }}
-                        className="btn-action"
-                      >
-                        <Printer size={16} style={{ marginRight: '6px' }}/> Direct Print
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-            </div>
-          )}
-
-          {/* =================================================================
-              SCREEN 2: Tone Tuning & Advanced Backdrop Studio
-              ================================================================= */}
-          {wizardStep === 2 && (
-            <div style={S.screenWrapper}>
-              
-              {/* Left Column: Refined visual workspace (Cropped cutout image) */}
-              <div style={S.leftPane}>
-                <div style={S.canvasOuter}>
-                  {processing && (
-                    <div style={S.loadingOverlay}>
-                      <RefreshCw size={36} className="spinner" color="#0d9488"/>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569', marginTop: '10px' }}>
-                        Isolating subject layout...
-                      </span>
-                    </div>
-                  )}
-
-                  <canvas
-                    ref={editorCanvasRef}
-                    width={CANVAS_W}
-                    height={CANVAS_H}
-                    onMouseDown={handleStartDrag}
-                    onMouseMove={handleDrag}
-                    onMouseUp={handleStopDrag}
-                    onMouseLeave={handleStopDrag}
-                    style={S.mainCanvas}
+              {/* Auto Remove Background Checkbox */}
+              <div style={S.panelSegment}>
+                <label style={S.checkboxCard} className="btn-action">
+                  <input
+                    type="checkbox"
+                    checked={autoRemoveBg}
+                    onChange={e => setAutoRemoveBg(e.target.checked)}
+                    style={S.checkboxDot}
                   />
-                </div>
-
-                {/* Identity Strip Banner Settings */}
-                <div style={S.sliderToolbar}>
-                  <label style={S.checkboxLabel}>
-                    <input
-                      type="checkbox"
-                      checked={showIdStrip}
-                      onChange={e => setShowIdStrip(e.target.checked)}
-                      style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                    />
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
-                      📛 Generate Identity Text Strip Overlay
-                    </span>
-                  </label>
-
-                  {showIdStrip && (
-                    <div style={S.idInputsGrid}>
-                      <div>
-                        <label style={S.miniLabel}>Candidate Name</label>
-                        <input
-                          type="text"
-                          value={candidateName}
-                          onChange={e => setCandidateName(e.target.value)}
-                          placeholder="John Doe"
-                          style={S.textInput}
-                        />
-                      </div>
-                      <div>
-                        <label style={S.miniLabel}>Date of Capture</label>
-                        <input
-                          type="date"
-                          value={captureDate}
-                          onChange={e => setCaptureDate(e.target.value)}
-                          style={S.textInput}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right Column: Color Grading & Pixel Brushes */}
-              <div style={S.rightPane}>
-                <div className="studio-scroll" style={S.paneContent}>
-                  
-                  {/* Color Correction Sliders */}
-                  <div style={S.panelSegment}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <h4 style={{ ...S.segmentTitle, margin: 0 }}>🎨 Tone Tuning</h4>
-                      <button
-                        onClick={() => {
-                          setBrightness(100);
-                          setContrast(100);
-                          setSaturation(100);
-                          setSharpness(0);
-                        }}
-                        style={S.microBtn}
-                        className="btn-action"
-                      >
-                        🔄 Reset Tuning
-                      </button>
-                    </div>
-                    <div style={S.slidersGrid}>
-                      <div style={S.sliderControlGroup}>
-                        <div style={S.sliderLabelRow}>
-                          <span>🔆 Brightness</span>
-                          <span>{brightness}%</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="50"
-                          max="150"
-                          value={brightness}
-                          onChange={e => setBrightness(parseInt(e.target.value))}
-                        />
-                      </div>
-
-                      <div style={S.sliderControlGroup}>
-                        <div style={S.sliderLabelRow}>
-                          <span>⚡ Contrast</span>
-                          <span>{contrast}%</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="50"
-                          max="150"
-                          value={contrast}
-                          onChange={e => setContrast(parseInt(e.target.value))}
-                        />
-                      </div>
-
-                      <div style={S.sliderControlGroup}>
-                        <div style={S.sliderLabelRow}>
-                          <span>🌈 Saturation</span>
-                          <span>{saturation}%</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="0"
-                          max="200"
-                          value={saturation}
-                          onChange={e => setSaturation(parseInt(e.target.value))}
-                        />
-                      </div>
-
-                      <div style={S.sliderControlGroup}>
-                        <div style={S.sliderLabelRow}>
-                          <span>✨ Sharpness</span>
-                          <span>{sharpness}%</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={sharpness}
-                          onChange={e => setSharpness(parseInt(e.target.value))}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Backdrop Color Engine Swatches */}
-                  <div style={S.panelSegment}>
-                    <h4 style={S.segmentTitle}>🎨 Dynamic Backdrop Engine</h4>
-                    <div style={S.swatchRow}>
-                      {[
-                        { color: '#ffffff', label: 'White' },
-                        { color: '#3653f8ff', label: 'Light Blue' },
-                        { color: '#f1f5f9', label: 'Light Gray' },
-                        { color: '#3b00c5ff', label: 'Passport Blue' },
-                        { color: '#94a3b8', label: 'Gray' }
-                      ].map(sw => (
-                        <button
-                          key={sw.color}
-                          onClick={() => setBgColor(sw.color)}
-                          style={{
-                            ...S.colorSwatch,
-                            background: sw.color,
-                            border: bgColor === sw.color ? '3px solid #3b82f6' : '1px solid #475569'
-                          }}
-                          title={sw.label}
-                          className="btn-action"
-                        />
-                      ))}
-
-                      {/* Custom RGB Spectrum Wheel Color Picker */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '6px' }}>
-                        <input
-                          type="color"
-                          value={bgColor === 'transparent' ? '#ffffff' : bgColor}
-                          onChange={e => setBgColor(e.target.value)}
-                          style={S.colorPickerBox}
-                          className="btn-action"
-                        />
-                        <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>Spectrum</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Precision Editing Brushes */}
-                  <div style={S.panelSegment}>
-                    <h4 style={S.segmentTitle}>🖌️ Precision Backdrop Touch-ups</h4>
-                    
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-                      <button
-                        onClick={() => { setBgMethod('chroma'); setChromaColor(null); }}
-                        style={{ ...S.brushBtn, ...(bgMethod === 'chroma' ? S.brushBtnActive : {}) }}
-                        className="btn-action"
-                      >
-                        🖱️ Color Click Tool
-                      </button>
-                      <button
-                        onClick={() => setBgMethod('brush')}
-                        style={{ ...S.brushBtn, ...(bgMethod === 'brush' ? S.brushBtnActive : {}) }}
-                        className="btn-action"
-                      >
-                        🖌️ Manual Eraser
-                      </button>
-                    </div>
-
-                    {bgMethod === 'chroma' && (
-                      <div style={S.toolSettingsBox}>
-                        <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0 0 8px' }}>
-                          Click any color on the face canvas view to crop/mask it out instantly.
-                        </p>
-                        <div style={S.sliderControlGroup}>
-                          <div style={S.sliderLabelRow}>
-                            <span>Tolerance Threshold</span>
-                            <span>{tolerance}</span>
-                          </div>
-                          <input
-                            type="range"
-                            min="5"
-                            max="80"
-                            value={tolerance}
-                            onChange={e => setTolerance(parseInt(e.target.value))}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {bgMethod === 'brush' && (
-                      <div style={S.toolSettingsBox}>
-                        <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0 0 8px' }}>
-                          Drag cursor onto canvas to wipe off remaining background nodes.
-                        </p>
-                        <div style={S.sliderControlGroup}>
-                          <div style={S.sliderLabelRow}>
-                            <span>Brush Size (px)</span>
-                            <span>{brushSize}px</span>
-                          </div>
-                          <input
-                            type="range"
-                            min="15"
-                            max="240"
-                            value={brushSize}
-                            onChange={e => setBrushSize(parseInt(e.target.value))}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {bgMethod !== 'none' && (
-                      <button
-                        onClick={() => { setBgMethod('none'); initMaskCanvas(); setChromaColor(null); }}
-                        style={S.clearFilterBtn}
-                        className="btn-action"
-                      >
-                        🚫 Clear Masks & Reset Tools
-                      </button>
-                    )}
-                  </div>
-
-                </div>
-
-                {/* Footer Buttons */}
-                <div style={{ ...S.paneFooter, display: 'flex', gap: '10px' }}>
-                  <button
-                    onClick={() => setWizardStep(1)}
-                    style={{ ...S.btnSecondary, flex: 1 }}
-                    className="btn-action"
-                  >
-                    ⬅️ Back
-                  </button>
-                  <button
-                    onClick={handleNextToStep3}
-                    style={{ ...S.btnPrimary, flex: 2 }}
-                    className="btn-action"
-                  >
-                    Next: Layout Matrix Grid ➡️
-                  </button>
-                </div>
-              </div>
-
-            </div>
-          )}
-
-          {/* =================================================================
-              SCREEN 3: Live Matrix Generation & Print Workspace
-              ================================================================= */}
-          {wizardStep === 3 && (
-            <div style={S.screenWrapper}>
-              
-              {/* Left Column: Asset Data Overview */}
-              <div style={{ ...S.leftPane, maxWidth: '400px' }}>
-                <div className="studio-scroll" style={S.paneContent}>
-                  
-                  {/* Single processed asset display box */}
-                  <div style={S.panelSegment}>
-                    <h4 style={S.segmentTitle}>🖼️ Processed Asset Preview</h4>
-                    <div style={S.queuedItemCard}>
-                      <img
-                        src={processedAsset ? processedAsset.src : ''}
-                        alt="Queued Target"
-                        style={{ ...S.queuedItemImg, transform: `rotate(${matrixRotation}deg)` }}
-                      />
-                      <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: '8px' }}>
-                        <button
-                          onClick={() => setMatrixRotation(r => (r + 90) % 360)}
-                          style={{ ...S.microBtn, flex: 1 }}
-                          className="btn-action"
-                        >
-                          🔄 Rotate 90°
-                        </button>
-                        <button
-                          onClick={downloadSingleJpg}
-                          style={{ ...S.microBtn, flex: 2 }}
-                          className="btn-action"
-                        >
-                          📥 Download Single JPG
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={S.panelSegment}>
-                    <h4 style={S.segmentTitle}>🔢 Matrix Target Quantity</h4>
-                    <div style={S.stepperBox}>
-                      <button
-                        onClick={() => setCopies(c => Math.max(1, c - 1))}
-                        style={S.stepBtn}
-                        className="btn-action"
-                      >
-                        <Minus size={16}/>
-                      </button>
-                      <span style={S.stepCountText}>{copies} Photos</span>
-                      <button
-                        onClick={() => setCopies(c => Math.min(64, c + 1))}
-                        style={S.stepBtn}
-                        className="btn-action"
-                      >
-                        <Plus size={16}/>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div style={S.panelSegment}>
-                    <h4 style={S.segmentTitle}>📥 Export Settings</h4>
-                    <div style={S.formRow}>
-                      <div style={{ width: '100%' }}>
-                        <label style={S.miniLabel}>Export DPI (Resolution)</label>
-                        <input
-                          type="number"
-                          value={dpi}
-                          onChange={e => setDpi(Number(e.target.value))}
-                          style={S.textInput}
-                          min="72"
-                          max="1200"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                </div>
-
-                <div style={S.paneFooter}>
-                  <button
-                    onClick={() => setWizardStep(2)}
-                    style={{ ...S.btnSecondary, width: '100%' }}
-                    className="btn-action"
-                  >
-                    ⬅️ Back to Backdrop Editor
-                  </button>
-                </div>
-              </div>
-
-              {/* Right Column: Live Matrix Preview Sheet & Margin Controls */}
-              <div style={{ ...S.rightPane, background: '#f8fafc' }}>
-                
-                {/* Preview Title Bar */}
-                <div style={{ ...S.previewTitleBar, borderRadius: 0, marginTop: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Grid size={16} color="#3b82f6"/>
-                    <span style={{ fontSize: '13px', fontWeight: 800, color: '#07213aff' }}>LIVE SHEET LAYOUT PREVIEW</span>
-                  </div>
-                </div>
-
-                {/* Live rendering grid preview */}
-                <div style={S.previewCanvasWrap}>
-                  <canvas
-                    ref={previewCanvasRef}
-                    width={290}
-                    style={S.sheetMockupCanvas}
-                  />
-                </div>
-
-                {/* Advanced Control Header (Moved Below Preview) */}
-                <div style={{ display: 'flex', gap: '16px', padding: '16px', borderTop: '1px solid #0d1f37ff', background: '#ffffff' }}>
                   <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>PAPER SIZE</label>
-                    <select
-                      value={paperSize}
-                      onChange={e => setPaperSize(e.target.value)}
-                      style={{ ...S.selectBox, width: '100%', height: '36px', fontSize: '14px', fontWeight: 600, border: '2px solid #000000', outline: 'none' }}
-                    >
-                      <option value="a4">A4 (210×297mm)</option>
-                      <option value="4x6">4×6 Inch (10×15cm)</option>
-                      <option value="5x7">5×7 Inch (13×18cm)</option>
-                      <option value="a5">A5 (148×210mm)</option>
-                      <option value="letter">Letter (US)</option>
-                      <option value="custom">Custom Size</option>
-                    </select>
-                    {paperSize === 'custom' && (
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>W (mm)</label>
-                          <input type="number" value={customPaperW} onChange={e => setCustomPaperW(Number(e.target.value))} style={{ width: '100%', padding: '4px', fontSize: '12px', border: '1px solid #cbd5e1', borderRadius: '4px' }} />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>H (mm)</label>
-                          <input type="number" value={customPaperH} onChange={e => setCustomPaperH(Number(e.target.value))} style={{ width: '100%', padding: '4px', fontSize: '12px', border: '1px solid #cbd5e1', borderRadius: '4px' }} />
-                        </div>
-                      </div>
-                    )}
+                    <p style={S.checkboxTitle}>🤖 Auto-Remove Background</p>
+                    <p style={S.checkboxDesc}>Uses Cloud AI cutout to isolate subject inside the crop box.</p>
                   </div>
-                  <div style={{ flex: 1.5 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <label style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>MARGIN / GAP CONTROL</label>
-                      <button
-                        onClick={() => { setGapX(2); setGapY(2); setMarginTop(4); setMarginLeft(4); }}
-                        style={{ background: 'transparent', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '2px 8px', fontSize: '11px', fontWeight: 600, color: '#475569', cursor: 'pointer' }}
-                      >
-                        ↺ Reset Default
-                      </button>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
-                          <span>Gap X</span>
-                          <span style={{ color: '#4f46e5' }}>{gapX}px</span>
-                        </div>
-                        <input type="range" min="0" max="30" value={gapX} onChange={e => setGapX(parseInt(e.target.value))} style={{ width: '100%', accentColor: '#4f46e5' }} />
-                      </div>
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
-                          <span>Gap Y</span>
-                          <span style={{ color: '#4f46e5' }}>{gapY}px</span>
-                        </div>
-                        <input type="range" min="0" max="30" value={gapY} onChange={e => setGapY(parseInt(e.target.value))} style={{ width: '100%', accentColor: '#4f46e5' }} />
-                      </div>
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
-                          <span>Margin Top</span>
-                          <span style={{ color: '#4f46e5' }}>{marginTop}px</span>
-                        </div>
-                        <input type="range" min="0" max="50" value={marginTop} onChange={e => setMarginTop(parseInt(e.target.value))} style={{ width: '100%', accentColor: '#4f46e5' }} />
-                      </div>
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
-                          <span>Margin Left</span>
-                          <span style={{ color: '#4f46e5' }}>{marginLeft}px</span>
-                        </div>
-                        <input type="range" min="0" max="50" value={marginLeft} onChange={e => setMarginLeft(parseInt(e.target.value))} style={{ width: '100%', accentColor: '#4f46e5' }} />
-                      </div>
-                    </div>
+                </label>
+              </div>
+            </div>
+
+            <div style={S.paneFooter}>
+              <button
+                onClick={handleNextToStep2}
+                style={S.btnPrimaryLarge}
+                className="btn-action"
+              >
+                Next: Tone & Backdrop Fill ➡️
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {wizardStep === 2 && (
+        <div style={S.screenWrapper}>
+          {/* Left Column: Visual workspace */}
+          <div style={S.leftPane}>
+            <div style={S.canvasOuter}>
+              {processing && (
+                <div style={S.loadingOverlay}>
+                  <RefreshCw size={36} className="spinner" color="#0d9488"/>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569', marginTop: '10px' }}>
+                    Isolating subject layout...
+                  </span>
+                </div>
+              )}
+
+              <canvas
+                ref={editorCanvasRef}
+                width={CANVAS_W}
+                height={CANVAS_H}
+                onMouseDown={handleStartDrag}
+                onMouseMove={handleDrag}
+                onMouseUp={handleStopDrag}
+                onMouseLeave={handleStopDrag}
+                style={S.mainCanvas}
+              />
+            </div>
+
+            {/* Identity Strip Settings */}
+            <div style={S.sliderToolbar}>
+              <label style={S.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={showIdStrip}
+                  onChange={e => setShowIdStrip(e.target.checked)}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                  📛 Generate Identity Text Strip Overlay
+                </span>
+              </label>
+
+              {showIdStrip && (
+                <div style={S.idInputsGrid}>
+                  <div>
+                    <label style={S.miniLabel}>Candidate Name</label>
+                    <input
+                      type="text"
+                      value={candidateName}
+                      onChange={e => setCandidateName(e.target.value)}
+                      placeholder="John Doe"
+                      style={S.textInput}
+                    />
+                  </div>
+                  <div>
+                    <label style={S.miniLabel}>Date of Capture</label>
+                    <input
+                      type="date"
+                      value={captureDate}
+                      onChange={e => setCaptureDate(e.target.value)}
+                      style={S.textInput}
+                    />
                   </div>
                 </div>
+              )}
+            </div>
+          </div>
 
-
-
-                {/* Pipeline fulfillment footer */}
-                <div style={S.fulfillmentFooter}>
+          {/* Right Column: Color Grading & Pixel Brushes */}
+          <div style={S.rightPane}>
+            <div className="studio-scroll" style={S.paneContent}>
+              <div style={S.panelSegment}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h4 style={{ ...S.segmentTitle, margin: 0 }}>🎨 Tone Tuning</h4>
                   <button
-                    onClick={downloadSheetJpg}
-                    style={S.btnHdJpg}
+                    onClick={() => {
+                      setBrightness(100);
+                      setContrast(100);
+                      setSaturation(100);
+                      setSharpness(0);
+                    }}
+                    style={S.microBtn}
                     className="btn-action"
                   >
-                    📥 Download HD Layout Sheet
-                  </button>
-                  <button
-                    onClick={handleSavePrintFile}
-                    style={S.btnSendToPrint}
-                    className="btn-action"
-                  >
-                    🖨️ Send Matrix to Print Queue
-                  </button>
-                  <button
-                    onClick={handleDirectPrintMatrix}
-                    style={{ ...S.btnSendToPrint, background: '#0f172a', color: '#ffffff' }}
-                    className="btn-action"
-                  >
-                    <Printer size={16} style={{ marginRight: '6px' }}/> Direct Print Matrix
+                    🔄 Reset Tuning
                   </button>
                 </div>
+                <div style={S.slidersGrid}>
+                  <div style={S.sliderControlGroup}>
+                    <div style={S.sliderLabelRow}>
+                      <span>🔆 Brightness</span>
+                      <span>{brightness}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="50"
+                      max="150"
+                      value={brightness}
+                      onChange={e => setBrightness(parseInt(e.target.value))}
+                    />
+                  </div>
 
+                  <div style={S.sliderControlGroup}>
+                    <div style={S.sliderLabelRow}>
+                      <span>⚡ Contrast</span>
+                      <span>{contrast}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="50"
+                      max="150"
+                      value={contrast}
+                      onChange={e => setContrast(parseInt(e.target.value))}
+                    />
+                  </div>
+
+                  <div style={S.sliderControlGroup}>
+                    <div style={S.sliderLabelRow}>
+                      <span>🌈 Saturation</span>
+                      <span>{saturation}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="200"
+                      value={saturation}
+                      onChange={e => setSaturation(parseInt(e.target.value))}
+                    />
+                  </div>
+
+                  <div style={S.sliderControlGroup}>
+                    <div style={S.sliderLabelRow}>
+                      <span>✨ Sharpness</span>
+                      <span>{sharpness}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={sharpness}
+                      onChange={e => setSharpness(parseInt(e.target.value))}
+                    />
+                  </div>
+                </div>
               </div>
 
-            </div>
-          )}
+              {/* Backdrop Color Engine Swatches */}
+              <div style={S.panelSegment}>
+                <h4 style={S.segmentTitle}>🎨 Dynamic Backdrop Engine</h4>
+                <div style={S.swatchRow}>
+                  {[
+                    { color: '#ffffff', label: 'White' },
+                    { color: '#3653f8ff', label: 'Light Blue' },
+                    { color: '#f1f5f9', label: 'Light Gray' },
+                    { color: '#3b00c5ff', label: 'Passport Blue' },
+                    { color: '#94a3b8', label: 'Gray' }
+                  ].map(sw => (
+                    <button
+                      key={sw.color}
+                      onClick={() => setBgColor(sw.color)}
+                      style={{
+                        ...S.colorSwatch,
+                        background: sw.color,
+                        border: bgColor === sw.color ? '3px solid #3b82f6' : '1px solid #475569'
+                      }}
+                      title={sw.label}
+                      className="btn-action"
+                    />
+                  ))}
 
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '6px' }}>
+                    <input
+                      type="color"
+                      value={bgColor === 'transparent' ? '#ffffff' : bgColor}
+                      onChange={e => setBgColor(e.target.value)}
+                      style={S.colorPickerBox}
+                      className="btn-action"
+                    />
+                    <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>Spectrum</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Precision Editing Brushes */}
+              <div style={S.panelSegment}>
+                <h4 style={S.segmentTitle}>🖌️ Precision Backdrop Touch-ups</h4>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                  <button
+                    onClick={() => { setBgMethod('chroma'); setChromaColor(null); }}
+                    style={{ ...S.brushBtn, ...(bgMethod === 'chroma' ? S.brushBtnActive : {}) }}
+                    className="btn-action"
+                  >
+                    鼠标 Color Click Tool
+                  </button>
+                  <button
+                    onClick={() => setBgMethod('brush')}
+                    style={{ ...S.brushBtn, ...(bgMethod === 'brush' ? S.brushBtnActive : {}) }}
+                    className="btn-action"
+                  >
+                    刷 Manual Eraser
+                  </button>
+                </div>
+
+                {bgMethod === 'chroma' && (
+                  <div style={S.toolSettingsBox}>
+                    <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0 0 8px' }}>
+                      Click any color on the face canvas view to crop/mask it out instantly.
+                    </p>
+                    <div style={S.sliderControlGroup}>
+                      <div style={S.sliderLabelRow}>
+                        <span>Tolerance Threshold</span>
+                        <span>{tolerance}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="5"
+                        max="80"
+                        value={tolerance}
+                        onChange={e => setTolerance(parseInt(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {bgMethod === 'brush' && (
+                  <div style={S.toolSettingsBox}>
+                    <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0 0 8px' }}>
+                      Drag cursor onto canvas to wipe off remaining background nodes.
+                    </p>
+                    <div style={S.sliderControlGroup}>
+                      <div style={S.sliderLabelRow}>
+                        <span>Brush Size (px)</span>
+                        <span>{brushSize}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="15"
+                        max="240"
+                        value={brushSize}
+                        onChange={e => setBrushSize(parseInt(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {bgMethod !== 'none' && (
+                  <button
+                    onClick={() => { setBgMethod('none'); initMaskCanvas(); setChromaColor(null); }}
+                    style={S.clearFilterBtn}
+                    className="btn-action"
+                  >
+                    🚫 Clear Masks & Reset Tools
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div style={{ ...S.paneFooter, display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setWizardStep(1)}
+                style={{ ...S.btnSecondary, flex: 1 }}
+                className="btn-action"
+              >
+                ⬅️ Back
+              </button>
+              <button
+                onClick={handleNextToStep3}
+                style={{ ...S.btnPrimary, flex: 2 }}
+                className="btn-action"
+              >
+                Next: Layout Matrix Grid ➡️
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {wizardStep === 3 && (
+        <div style={S.screenWrapper}>
+          {/* Left Column: Asset Data Overview */}
+          <div style={{ ...S.leftPane, maxWidth: '400px' }}>
+            <div className="studio-scroll" style={S.paneContent}>
+              <div style={S.panelSegment}>
+                <h4 style={S.segmentTitle}>🖼️ Processed Asset Preview</h4>
+                <div style={S.queuedItemCard}>
+                  <img
+                    src={processedAsset ? processedAsset.src : ''}
+                    alt="Queued Target"
+                    style={{ ...S.queuedItemImg, transform: `rotate(${matrixRotation}deg)` }}
+                  />
+                  <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: '8px' }}>
+                    <button
+                      onClick={() => setMatrixRotation(r => (r + 90) % 360)}
+                      style={{ ...S.microBtn, flex: 1 }}
+                      className="btn-action"
+                    >
+                      🔄 Rotate 90°
+                    </button>
+                    <button
+                      onClick={downloadSingleJpg}
+                      style={{ ...S.microBtn, flex: 2 }}
+                      className="btn-action"
+                    >
+                      📥 Download Single JPG
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div style={S.panelSegment}>
+                <h4 style={S.segmentTitle}>🔢 Matrix Target Quantity</h4>
+                <div style={S.stepperBox}>
+                  <button
+                    onClick={() => setCopies(c => Math.max(1, c - 1))}
+                    style={S.stepBtn}
+                    className="btn-action"
+                  >
+                    <Minus size={16}/>
+                  </button>
+                  <span style={S.stepCountText}>{copies} Photos</span>
+                  <button
+                    onClick={() => setCopies(c => Math.min(64, c + 1))}
+                    style={S.stepBtn}
+                    className="btn-action"
+                  >
+                    <Plus size={16}/>
+                  </button>
+                </div>
+              </div>
+
+              <div style={S.panelSegment}>
+                <h4 style={S.segmentTitle}>📥 Export Settings</h4>
+                <div style={S.formRow}>
+                  <div style={{ width: '100%' }}>
+                    <label style={S.miniLabel}>Export DPI (Resolution)</label>
+                    <input
+                      type="number"
+                      value={dpi}
+                      onChange={e => setDpi(Number(e.target.value))}
+                      style={S.textInput}
+                      min="72"
+                      max="1200"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={S.paneFooter}>
+              <button
+                onClick={() => setWizardStep(2)}
+                style={{ ...S.btnSecondary, width: '100%' }}
+                className="btn-action"
+              >
+                ⬅️ Back to Backdrop Editor
+              </button>
+            </div>
+          </div>
+
+          {/* Right Column: Live Matrix Preview Sheet & Margin Controls */}
+          <div style={{ ...S.rightPane, background: '#f8fafc' }}>
+            <div style={{ ...S.previewTitleBar, borderRadius: 0, marginTop: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Grid size={16} color="#3b82f6"/>
+                <span style={{ fontSize: '13px', fontWeight: 800, color: '#07213aff' }}>LIVE SHEET LAYOUT PREVIEW</span>
+              </div>
+            </div>
+
+            <div style={S.previewCanvasWrap}>
+              <canvas
+                ref={previewCanvasRef}
+                width={290}
+                style={S.sheetMockupCanvas}
+              />
+            </div>
+
+            {/* Advanced Control Header */}
+            <div style={{ display: 'flex', gap: '16px', padding: '16px', borderTop: '1px solid #0d1f37ff', background: '#ffffff' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>PAPER SIZE</label>
+                <select
+                  value={paperSize}
+                  onChange={e => setPaperSize(e.target.value)}
+                  style={{ ...S.selectBox, width: '100%', height: '36px', fontSize: '14px', fontWeight: 600, border: '2px solid #000000', outline: 'none' }}
+                >
+                  <option value="a4">A4 (210×297mm)</option>
+                  <option value="4x6">4×6 Inch (10×15cm)</option>
+                  <option value="5x7">5×7 Inch (13×18cm)</option>
+                  <option value="a5">A5 (148×210mm)</option>
+                  <option value="letter">Letter (US)</option>
+                  <option value="custom">Custom Size</option>
+                </select>
+                {paperSize === 'custom' && (
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>W (mm)</label>
+                      <input type="number" value={customPaperW} onChange={e => setCustomPaperW(Number(e.target.value))} style={{ width: '100%', padding: '4px', fontSize: '12px', border: '1px solid #cbd5e1', borderRadius: '4px' }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '10px', fontWeight: 700, color: '#64748b' }}>H (mm)</label>
+                      <input type="number" value={customPaperH} onChange={e => setCustomPaperH(Number(e.target.value))} style={{ width: '100%', padding: '4px', fontSize: '12px', border: '1px solid #cbd5e1', borderRadius: '4px' }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div style={{ flex: 1.5 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>MARGIN / GAP CONTROL</label>
+                  <button
+                    onClick={() => { setGapX(2); setGapY(2); setMarginTop(4); setMarginLeft(4); }}
+                    style={{ background: 'transparent', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '2px 8px', fontSize: '11px', fontWeight: 600, color: '#475569', cursor: 'pointer' }}
+                  >
+                    ↺ Reset Default
+                  </button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
+                      <span>Gap X</span>
+                      <span style={{ color: '#4f46e5' }}>{gapX}px</span>
+                    </div>
+                    <input type="range" min="0" max="30" value={gapX} onChange={e => setGapX(parseInt(e.target.value))} style={{ width: '100%', accentColor: '#4f46e5' }} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
+                      <span>Gap Y</span>
+                      <span style={{ color: '#4f46e5' }}>{gapY}px</span>
+                    </div>
+                    <input type="range" min="0" max="30" value={gapY} onChange={e => setGapY(parseInt(e.target.value))} style={{ width: '100%', accentColor: '#4f46e5' }} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
+                      <span>Margin Top</span>
+                      <span style={{ color: '#4f46e5' }}>{marginTop}px</span>
+                    </div>
+                    <input type="range" min="0" max="50" value={marginTop} onChange={e => setMarginTop(parseInt(e.target.value))} style={{ width: '100%', accentColor: '#4f46e5' }} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
+                      <span>Margin Left</span>
+                      <span style={{ color: '#4f46e5' }}>{marginLeft}px</span>
+                    </div>
+                    <input type="range" min="0" max="50" value={marginLeft} onChange={e => setMarginLeft(parseInt(e.target.value))} style={{ width: '100%', accentColor: '#4f46e5' }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Pipeline fulfillment footer */}
+            <div style={S.fulfillmentFooter}>
+              <button
+                onClick={downloadSheetJpg}
+                style={S.btnHdJpg}
+                className="btn-action"
+              >
+                📥 Download HD Layout Sheet
+              </button>
+              <button
+                onClick={handleSavePrintFile}
+                style={S.btnSendToPrint}
+                className="btn-action"
+              >
+                🖨️ Send Matrix to Print Queue
+              </button>
+              <button
+                onClick={handleDirectPrintMatrix}
+                style={{ ...S.btnSendToPrint, background: '#0f172a', color: '#ffffff' }}
+                className="btn-action"
+              >
+                <Printer size={16} style={{ marginRight: '6px' }}/> Direct Print Matrix
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── STYLING SYSTEM (Light Mode + Outfit theme) ──────────────────────
 const S = {
-  overlay: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(15, 23, 42, 0.75)',
-    backdropFilter: 'blur(12px)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 9999,
-    padding: '16px'
-  },
-  card: {
-    background: '#ffffff', // Light background
-    borderRadius: '24px',
-    border: '1px solid #e2e8f0',
-    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-    width: '100%',
-    maxWidth: '1080px',
-    height: '92vh',
-    maxHeight: '780px',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-    color: '#0f172a',
-    fontFamily: "'Outfit', sans-serif"
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '18px 24px',
-    borderBottom: '1px solid #e2e8f0',
-    background: '#f8fafc',
-    flexShrink: 0
-  },
-  title: {
-    fontSize: '20px',
-    fontWeight: 800,
-    color: '#0f172a',
-    margin: 0,
-    letterSpacing: '-0.02em'
-  },
-  subtitle: {
-    fontSize: '12px',
-    fontWeight: 500,
-    color: '#64748b',
-    margin: '3px 0 0'
-  },
-  modeDropdown: {
-    background: '#f1f5f9',
-    border: '1px solid #cbd5e1',
-    borderRadius: '8px',
-    padding: '6px 12px',
-    fontSize: '13px',
-    fontWeight: 700,
-    color: '#0f172a',
-    cursor: 'pointer',
-    outline: 'none'
-  },
-  stepperContainer: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    background: '#f1f5f9',
-    padding: '6px 16px',
-    borderRadius: '100px',
-    border: '1px solid #e2e8f0'
-  },
-  stepBubble: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    fontSize: '11px',
-    fontWeight: 700,
-    color: '#64748b',
-    opacity: 0.65,
-    transition: 'all 0.2s'
-  },
-  stepActive: {
-    color: '#0d9488',
-    opacity: 1
-  },
-  stepLine: {
-    width: '14px',
-    height: '1px',
-    background: '#cbd5e1'
-  },
-  closeBtn: {
-    background: '#f1f5f9',
-    border: '1px solid #cbd5e1',
-    borderRadius: '10px',
-    width: '36px',
-    height: '36px',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#475569'
-  },
-  bodyContainer: {
-    display: 'flex',
-    flex: 1,
-    overflow: 'hidden'
-  },
   screenWrapper: {
     display: 'flex',
     flex: 1,
@@ -2268,7 +1758,7 @@ const S = {
     justifyContent: 'center',
     position: 'relative',
     overflow: 'hidden',
-    padding: '0', // Removed padding to make it full workspace
+    padding: '0',
     background: '#e2e8f0'
   },
   mainCanvas: {
@@ -2279,49 +1769,28 @@ const S = {
   sliderToolbar: {
     padding: '16px 20px',
     background: '#ffffff',
-    borderTop: '1px solid #e2e8f0'
+    borderTop: '1px solid #e2e8f0',
+    width: '100%'
   },
-  toolbarActionsRow: {
-    display: 'flex',
-    gap: '8px',
-    marginBottom: '16px'
-  },
-  modeTab: {
-    flex: 1,
+  btnSecondary: {
+    background: '#f8fafc',
+    color: '#0f172a',
     padding: '8px 12px',
-    fontSize: '11px',
-    fontWeight: 700,
-    borderRadius: '8px',
-    background: '#f1f5f9',
-    color: '#64748b',
-    border: '1px solid #e2e8f0',
+    borderRadius: '10px',
+    border: '1px solid #cbd5e1',
     cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: 700,
     display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  modeTabActive: {
-    background: '#0d9488',
-    color: '#ffffff',
-    borderColor: '#0d9488',
-    boxShadow: '0 0 10px rgba(13, 148, 136, 0.2)'
-  },
-  slidersGrid: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px'
-  },
-  sliderControlGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px'
+    alignItems: 'center'
   },
   sliderLabelRow: {
     display: 'flex',
     justifyContent: 'space-between',
     fontSize: '11px',
     fontWeight: 700,
-    color: '#475569'
+    color: '#475569',
+    marginBottom: '4px'
   },
   paneContent: {
     flex: 1,
@@ -2348,11 +1817,11 @@ const S = {
   dropdownInput: {
     width: '100%',
     background: '#ffffff',
-    border: '1px solid #cbd5e1',
-    borderRadius: '8px',
+    border: '1.5px solid #cbd5e1',
+    borderRadius: '10px',
     padding: '10px 12px',
     color: '#0f172a',
-    fontSize: '12px',
+    fontSize: '13px',
     fontWeight: 600,
     outline: 'none',
     cursor: 'pointer'
@@ -2360,7 +1829,7 @@ const S = {
   customInputGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: '10px',
+    gap: '12px',
     marginTop: '12px'
   },
   miniLabel: {
@@ -2368,8 +1837,8 @@ const S = {
     fontWeight: 700,
     color: '#64748b',
     textTransform: 'uppercase',
-    display: 'block',
-    marginBottom: '4px'
+    marginBottom: '4px',
+    display: 'block'
   },
   numberInput: {
     width: '100%',
@@ -2379,19 +1848,23 @@ const S = {
     padding: '8px 10px',
     color: '#0f172a',
     fontSize: '12px',
-    fontWeight: 700,
+    fontWeight: 600,
     outline: 'none'
   },
   checkboxCard: {
     display: 'flex',
     alignItems: 'flex-start',
-    gap: '10px',
-    cursor: 'pointer'
+    gap: '12px',
+    cursor: 'pointer',
+    background: '#ffffff',
+    padding: '12px',
+    borderRadius: '12px',
+    border: '1px solid #cbd5e1'
   },
   checkboxDot: {
-    marginTop: '3px',
     width: '16px',
     height: '16px',
+    marginTop: '2px',
     cursor: 'pointer'
   },
   checkboxTitle: {
@@ -2439,19 +1912,6 @@ const S = {
     alignItems: 'center',
     justifyContent: 'center',
     boxShadow: '0 4px 12px rgba(13, 148, 136, 0.2)'
-  },
-  btnSecondary: {
-    background: '#f1f5f9',
-    color: '#475569',
-    border: '1px solid #cbd5e1',
-    borderRadius: '10px',
-    padding: '10px 16px',
-    fontSize: '12px',
-    fontWeight: 700,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center'
   },
   loadingOverlay: {
     position: 'absolute',
@@ -2612,17 +2072,6 @@ const S = {
     alignItems: 'center',
     justifyContent: 'space-between'
   },
-  paperSelect: {
-    background: '#ffffff',
-    color: '#0d9488',
-    border: '1.5px solid #0d9488',
-    borderRadius: '8px',
-    padding: '6px 10px',
-    fontSize: '11px',
-    fontWeight: 700,
-    outline: 'none',
-    cursor: 'pointer'
-  },
   previewCanvasWrap: {
     flex: 1,
     overflow: 'auto',
@@ -2637,33 +2086,6 @@ const S = {
     boxShadow: '0 15px 40px rgba(0,0,0,0.15)',
     maxWidth: '100%',
     maxHeight: '100%'
-  },
-  spacingSlidersGrid: {
-    padding: '16px',
-    background: '#ffffff',
-    borderTop: '1px solid #e2e8f0',
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '14px'
-  },
-  spacingSliderGroup: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px'
-  },
-  spacingLabel: {
-    fontSize: '10px',
-    fontWeight: 700,
-    color: '#475569',
-    textTransform: 'uppercase',
-    width: '75px'
-  },
-  spacingValText: {
-    fontSize: '11px',
-    fontWeight: 700,
-    color: '#0f172a',
-    width: '30px',
-    textAlign: 'right'
   },
   fulfillmentFooter: {
     padding: '18px 24px',
@@ -2700,5 +2122,25 @@ const S = {
     alignItems: 'center',
     justifyContent: 'center',
     boxShadow: '0 4px 15px rgba(16, 185, 129, 0.2)'
+  },
+  slidersGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px'
+  },
+  sliderControlGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px'
+  },
+  formRow: {
+    display: 'flex',
+    gap: '12px'
+  },
+  selectBox: {
+    borderRadius: '8px',
+    border: '1px solid #cbd5e1',
+    padding: '6px 10px',
+    color: '#0f172a'
   }
 };

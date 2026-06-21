@@ -1,6 +1,6 @@
 // pages/UploadPage.jsx
 import { useState, useEffect } from 'react';
-import PassportPhotoMaker from '../components/PassportPhotoMaker';
+import PhotoStudio from '../components/PhotoStudio';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -702,7 +702,7 @@ export default function UploadPage() {
         )}
       </div>
       {passportImage && (
-        <PassportPhotoMaker
+        <PhotoStudio
           imageSource={passportImage}
           onClose={() => {
             setPassportImage(null);

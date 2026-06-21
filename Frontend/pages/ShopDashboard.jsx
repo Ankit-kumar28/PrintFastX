@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import PrintQRPoster from '../components/PrintQRPoster';
-import PassportPhotoMaker from '../components/PassportPhotoMaker';
+import PhotoStudio from '../components/PhotoStudio';
 import { 
   LayoutDashboard, 
   QrCode, 
@@ -1897,7 +1897,7 @@ export default function ShopDashboard() {
         </div>
       )}
       {passportImageSource && (
-        <PassportPhotoMaker
+        <PhotoStudio
           imageSource={passportImageSource}
           onClose={() => setPassportImageSource(null)}
           onSave={() => setPassportImageSource(null)}
