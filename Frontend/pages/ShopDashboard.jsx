@@ -850,9 +850,12 @@ export default function ShopDashboard() {
                       const isExpanded = !!expandedOrders[order.token];
                       const hasColor = order.files?.some(f => f.colorMode === 'color');
                       
-                      const hasPassport = order.files?.some(f => f.imageType === 'passport' || f.fileName?.toLowerCase().startsWith('passport'));
-                      const hasImage = order.files?.some(f => !f.fileName?.toLowerCase().startsWith('passport') && ['.jpg', '.jpeg', '.png'].some(ext => f.fileName.toLowerCase().endsWith(ext)));
-                      const hasDoc = order.files?.some(f => !f.fileName?.toLowerCase().startsWith('passport') && !['.jpg', '.jpeg', '.png'].some(ext => f.fileName.toLowerCase().endsWith(ext)));
+                      const checkIsPassport = (f) => f.imageType === 'passport' || f.fileName?.toLowerCase().startsWith('passport');
+                      const checkIsImage = (f) => !checkIsPassport(f) && ['.jpg', '.jpeg', '.png'].some(ext => f.fileName?.toLowerCase().endsWith(ext));
+                      
+                      const hasPassport = order.files?.some(checkIsPassport);
+                      const hasImage = order.files?.some(checkIsImage);
+                      const hasDoc = order.files?.some(f => !checkIsPassport(f) && !checkIsImage(f));
                       const isMixedOrder = (hasPassport ? 1 : 0) + (hasImage ? 1 : 0) + (hasDoc ? 1 : 0) > 1;
                       
                       const isPassportOrder = !isMixedOrder && hasPassport;
@@ -1614,6 +1617,7 @@ export default function ShopDashboard() {
               {activePrintOrder.files?.map((file, idx) => {
                 const isPassport = file.imageType === 'passport' || file.fileName?.toLowerCase().startsWith('passport');
                 const isImage = !isPassport && ['.jpg', '.jpeg', '.png'].some(ext => file.fileName.toLowerCase().endsWith(ext));
+                const isEditable = ['.jpg', '.jpeg', '.png'].some(ext => file.fileName?.toLowerCase().endsWith(ext));
                 
                 // Rate & Price calculation
                 let appliedRate = 0;
@@ -1709,7 +1713,7 @@ export default function ShopDashboard() {
                       
                       {/* Action icon controls */}
                       <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
-                        {isImage && (
+                        {isEditable && (
                           <button
                             onClick={() => {
                               const fileUrl = `${API}/api/orders/file/${activePrintOrder._id}/${file._id}`;
