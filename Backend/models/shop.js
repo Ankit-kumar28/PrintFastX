@@ -75,7 +75,10 @@ const shopSchema = new mongoose.Schema({
   pricing: {
     bwRate: { type: Number, default: 2 },      // ₹ per page
     colorRate: { type: Number, default: 8 },
-    priorityFee: { type: Number, default: 10 } // ₹ flat rate for priority bypass
+    priorityFee: { type: Number, default: 10 }, // ₹ flat rate for priority bypass
+    passportRate: { type: Number, default: 30 },
+    photoBwRate: { type: Number, default: 5 },
+    photoColorRate: { type: Number, default: 10 }
   },
   autoDeleteHours: {
     type: Number,

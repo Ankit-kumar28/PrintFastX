@@ -341,17 +341,20 @@ router.get('/admin/analytics', adminAuth, async (req, res) => {
 // Update Shop Settings (Pricing, autoDeleteHours, shop profile)
 router.patch('/settings', auth, async (req, res) => {
   try {
-    const { bwRate, colorRate, priorityFee, autoDeleteHours, shopName, ownerName, whatsappNumber, state } = req.body;
+    const { bwRate, colorRate, priorityFee, passportRate, photoBwRate, photoColorRate, autoDeleteHours, shopName, ownerName, whatsappNumber, state } = req.body;
     const shop = await Shop.findById(req.user.id);
     if (!shop) return res.status(404).json({ error: 'Shop not found' });
 
     if (!shop.pricing) {
-      shop.pricing = { bwRate: 2, colorRate: 8, priorityFee: 10 };
+      shop.pricing = { bwRate: 2, colorRate: 8, priorityFee: 10, passportRate: 30, photoBwRate: 5, photoColorRate: 10 };
     }
 
     if (bwRate !== undefined) shop.pricing.bwRate = Number(bwRate);
     if (colorRate !== undefined) shop.pricing.colorRate = Number(colorRate);
     if (priorityFee !== undefined) shop.pricing.priorityFee = Number(priorityFee);
+    if (passportRate !== undefined) shop.pricing.passportRate = Number(passportRate);
+    if (photoBwRate !== undefined) shop.pricing.photoBwRate = Number(photoBwRate);
+    if (photoColorRate !== undefined) shop.pricing.photoColorRate = Number(photoColorRate);
     if (autoDeleteHours !== undefined) shop.autoDeleteHours = Number(autoDeleteHours);
     if (shopName !== undefined) shop.shopName = shopName;
     if (ownerName !== undefined) shop.ownerName = ownerName;

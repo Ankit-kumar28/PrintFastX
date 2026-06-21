@@ -58,6 +58,7 @@ router.post('/:shopId', uploadMiddleware.array('files'), async (req, res) => {
       const copies = Number(settings.copies || 1);
       const colorMode = settings.colorMode || 'bw';
       const sides = settings.sides || 'single';
+      const imageType = settings.imageType || 'normal';
 
       // Count PDF pages (loads from memory buffer if S3 is enabled, falls back to disk path for local)
       let pages = 1;
@@ -72,11 +73,28 @@ router.post('/:shopId', uploadMiddleware.array('files'), async (req, res) => {
       }
 
       // Price Calculation
-      const rate = colorMode === 'color' ? shop.pricing.colorRate : shop.pricing.bwRate;
-      let finalRate = rate;
-      if (sides === 'double') finalRate = Math.round(rate * 0.6);
+      const isPassport = imageType === 'passport' || file.originalname.toLowerCase().startsWith('passport');
+      const isImage = !isPassport && ['.jpg', '.jpeg', '.png'].some(ext => file.originalname.toLowerCase().endsWith(ext));
+      let fileAmount = 0;
 
-      const fileAmount = Math.round(pages * copies * finalRate);
+      if (isPassport) {
+        // Passport photo: flat rate per set
+        const passportRate = shop.pricing?.passportRate !== undefined ? shop.pricing.passportRate : 30;
+        fileAmount = passportRate;
+      } else if (isImage) {
+        // Normal image/photo print: pages = 1, multiply by photo color/bw rate
+        const rate = colorMode === 'color' 
+          ? (shop.pricing?.photoColorRate !== undefined ? shop.pricing.photoColorRate : 10) 
+          : (shop.pricing?.photoBwRate !== undefined ? shop.pricing.photoBwRate : 5);
+        fileAmount = Math.round(copies * rate);
+      } else {
+        // Document: standard page-based calculation
+        const rate = colorMode === 'color' ? shop.pricing.colorRate : shop.pricing.bwRate;
+        let finalRate = rate;
+        if (sides === 'double') finalRate = Math.round(rate * 0.6);
+        fileAmount = Math.round(pages * copies * finalRate);
+      }
+
       totalAmount += fileAmount;
 
       // Save file url: upload to AWS S3 if storage engine is configured, otherwise use local disk relative path
@@ -93,7 +111,8 @@ router.post('/:shopId', uploadMiddleware.array('files'), async (req, res) => {
         pages,
         copies,
         colorMode,
-        sides
+        sides,
+        imageType
       });
     }
 

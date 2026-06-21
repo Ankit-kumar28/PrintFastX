@@ -1,5 +1,6 @@
 // pages/UploadPage.jsx
 import { useState, useEffect } from 'react';
+import PassportPhotoMaker from '../components/PassportPhotoMaker';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -56,6 +57,32 @@ export default function UploadPage() {
   // UI drag state & detailed fare breakdown visibility toggles
   const [isDragging, setIsDragging] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
+
+  // Passport Photo Maker states
+  const [passportImage, setPassportImage] = useState(null);
+  const [passportTargetFileId, setPassportTargetFileId] = useState(null);
+
+  const handleSavePassportSheet = ({ file, name }) => {
+    const newFileItem = {
+      id: Math.random().toString(36).substring(7),
+      file,
+      name,
+      size: file.size,
+      pages: 1,
+      colorMode: 'color',
+      copies: 1,
+      sides: 'single',
+      imageType: 'passport'
+    };
+
+    setFiles(prev => {
+      const updated = prev.filter(item => item.id !== passportTargetFileId);
+      return [...updated, newFileItem];
+    });
+
+    setPassportImage(null);
+    setPassportTargetFileId(null);
+  };
 
   // Fetch shop details (Public Endpoint)
   useEffect(() => {
@@ -127,7 +154,8 @@ export default function UploadPage() {
         pages,
         colorMode: 'bw',
         copies: 1,
-        sides: 'single'
+        sides: 'single',
+        imageType: 'normal' // 'normal' | 'passport' — only for images
       });
     }
 
@@ -186,12 +214,26 @@ export default function UploadPage() {
     if (!shop) return;
     const bwRate = shop.pricing?.bwRate || 2;
     const colorRate = shop.pricing?.colorRate || 8;
+    const passportRate = shop.pricing?.passportRate || 30;
+    const photoBwRate = shop.pricing?.photoBwRate !== undefined ? shop.pricing.photoBwRate : 5;
+    const photoColorRate = shop.pricing?.photoColorRate !== undefined ? shop.pricing.photoColorRate : 10;
 
     let subtotal = 0;
     files.forEach(f => {
-      const baseRate = f.colorMode === 'color' ? colorRate : bwRate;
-      const fileAmount = Math.round(f.pages * f.copies * baseRate);
-      subtotal += fileAmount;
+      const isPassport = f.imageType === 'passport' || f.name.toLowerCase().startsWith('passport');
+      const isImage = !isPassport && ['.jpg', '.jpeg', '.png'].some(ext => f.name.toLowerCase().endsWith(ext));
+      if (isPassport) {
+        // Passport photo: flat rate per set regardless of copies
+        subtotal += passportRate;
+      } else if (isImage) {
+        // Normal image print
+        const baseRate = f.colorMode === 'color' ? photoColorRate : photoBwRate;
+        subtotal += Math.round(f.copies * baseRate);
+      } else {
+        const baseRate = f.colorMode === 'color' ? colorRate : bwRate;
+        const fileAmount = Math.round(f.pages * f.copies * baseRate);
+        subtotal += fileAmount;
+      }
     });
 
     if (priorityPrint) {
@@ -222,7 +264,8 @@ export default function UploadPage() {
       copies: f.copies,
       colorMode: f.colorMode,
       sides: f.sides,
-      pages: f.pages
+      pages: f.pages,
+      imageType: f.imageType || 'normal'
     }));
 
     formData.append('fileSettings', JSON.stringify(settings));
@@ -391,72 +434,136 @@ export default function UploadPage() {
 
             {/* List of files */}
             <div style={styles.filesList}>
-              {files.map(f => (
-                <div key={f.id} style={styles.fileCard}>
-                  {/* Row 1: File metadata & Delete */}
-                  <div style={styles.fileMetaRow}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
-                      {getFileIcon(f.name)}
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <p style={styles.fileNameText}>{f.name}</p>
-                        <p style={styles.fileSizeText}>
-                          {(f.size / 1024 / 1024).toFixed(2)} MB &bull; {f.pages} Pages
-                        </p>
+              {files.map(f => {
+                const isPassport = f.imageType === 'passport' || f.name.toLowerCase().startsWith('passport');
+                const isFormatImage = ['.jpg', '.jpeg', '.png'].some(ext => f.name.toLowerCase().endsWith(ext));
+                const isImage = isFormatImage && !isPassport;
+
+                return (
+                  <div key={f.id} style={{
+                    ...styles.fileCard,
+                    borderLeft: isPassport ? '4px solid #7c3aed' : isImage ? '4px solid #0d9488' : '4px solid #e2e8f0',
+                    background: isPassport ? '#faf5ff' : isImage ? '#f0fdfa' : '#ffffff'
+                  }}>
+                    {/* Row 1: File metadata & Delete */}
+                    <div style={styles.fileMetaRow}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
+                        {isPassport || isImage ? (
+                          <span style={{
+                            fontSize: '22px', marginRight: '2px', flexShrink: 0,
+                            background: isPassport ? '#ede9fe' : '#ccfbf1',
+                            borderRadius: '8px', padding: '4px 6px'
+                          }}>
+                            {isPassport ? '🪪' : '🖼️'}
+                          </span>
+                        ) : getFileIcon(f.name)}
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <p style={styles.fileNameText}>{f.name}</p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                            <p style={{ ...styles.fileSizeText, margin: 0 }}>
+                              {(f.size / 1024 / 1024).toFixed(2)} MB
+                              {isPassport ? (
+                                <span style={{
+                                  marginLeft: '6px', fontSize: '10px', fontWeight: 700,
+                                  background: '#ede9fe',
+                                  color: '#7c3aed',
+                                  borderRadius: '4px', padding: '1px 6px'
+                                }}>
+                                  📸 Passport
+                                </span>
+                              ) : isImage ? (
+                                <span style={{
+                                  marginLeft: '6px', fontSize: '10px', fontWeight: 700,
+                                  background: '#ccfbf1',
+                                  color: '#0d9488',
+                                  borderRadius: '4px', padding: '1px 6px'
+                                }}>
+                                  🖼️ Photo Print
+                                </span>
+                              ) : (
+                                <span style={{ marginLeft: '6px' }}>• {f.pages} Pages</span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <button onClick={() => deleteFileItem(f.id)} style={styles.deleteBtn}>
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-
-                  {/* Row 2: File options */}
-                  <div style={styles.fileOptionsRow}>
-                    {/* B&W vs Color Toggle */}
-                    <div style={styles.toggleGroup}>
-                      <button
-                        type="button"
-                        onClick={() => updateFileSetting(f.id, 'colorMode', 'bw')}
-                        style={{
-                          ...styles.toggleBtn,
-                          ...(f.colorMode === 'bw' ? styles.toggleBtnActive : {})
-                        }}
-                      >
-                        B&W
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateFileSetting(f.id, 'colorMode', 'color')}
-                        style={{
-                          ...styles.toggleBtn,
-                          ...(f.colorMode === 'color' ? styles.toggleBtnActive : {})
-                        }}
-                      >
-                        Color
+                      <button onClick={() => deleteFileItem(f.id)} style={styles.deleteBtn}>
+                        <Trash2 size={16} />
                       </button>
                     </div>
 
-                    {/* Copies adjustment */}
-                    <div style={styles.copiesAdjuster}>
-                      <span style={{ fontSize: '12px', color: '#64748b' }}>Copies</span>
-                      <button
-                        type="button"
-                        onClick={() => updateFileSetting(f.id, 'copies', Math.max(1, f.copies - 1))}
-                        style={styles.adjusterBtn}
-                      >
-                        -
-                      </button>
-                      <span style={styles.copiesDisplay}>{f.copies}</span>
-                      <button
-                        type="button"
-                        onClick={() => updateFileSetting(f.id, 'copies', f.copies + 1)}
-                        style={styles.adjusterBtn}
-                      >
-                        +
-                      </button>
+                    {/* Row 2: File options */}
+                    <div style={{ ...styles.fileOptionsRow, flexWrap: 'wrap', gap: '8px' }}>
+                      {/* Image Type Selector — shown only for image files */}
+                      {isFormatImage && (
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Print As:</span>
+                          <button
+                            type="button"
+                            onClick={() => updateFileSetting(f.id, 'imageType', 'normal')}
+                            style={{
+                              padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+                              border: f.imageType === 'normal' ? '2px solid #0d9488' : '1px solid #cbd5e1',
+                              background: f.imageType === 'normal' ? '#f0fdfa' : '#f8fafc',
+                              color: f.imageType === 'normal' ? '#0d9488' : '#64748b'
+                            }}
+                          >
+                            🖼️ Normal
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateFileSetting(f.id, 'imageType', 'passport')}
+                            style={{
+                              padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+                              border: f.imageType === 'passport' ? '2px solid #7c3aed' : '1px solid #cbd5e1',
+                              background: f.imageType === 'passport' ? '#faf5ff' : '#f8fafc',
+                              color: f.imageType === 'passport' ? '#7c3aed' : '#64748b'
+                            }}
+                          >
+                            📸 Passport
+                          </button>
+                        </div>
+                      )}
+
+                      {/* B&W vs Color Toggle — only for non-passport images & docs */}
+                      {!isPassport && (
+                        <div style={styles.toggleGroup}>
+                          <button
+                            type="button"
+                            onClick={() => updateFileSetting(f.id, 'colorMode', 'bw')}
+                            style={{ ...styles.toggleBtn, ...(f.colorMode === 'bw' ? styles.toggleBtnActive : {}) }}
+                          >B&W</button>
+                          <button
+                            type="button"
+                            onClick={() => updateFileSetting(f.id, 'colorMode', 'color')}
+                            style={{ ...styles.toggleBtn, ...(f.colorMode === 'color' ? styles.toggleBtnActive : {}) }}
+                          >Color</button>
+                        </div>
+                      )}
+
+                      {/* Copies — only for non-passport */}
+                      {!isPassport && (
+                        <div style={styles.copiesAdjuster}>
+                          <span style={{ fontSize: '12px', color: '#64748b' }}>Copies</span>
+                          <button type="button" onClick={() => updateFileSetting(f.id, 'copies', Math.max(1, f.copies - 1))} style={styles.adjusterBtn}>-</button>
+                          <span style={styles.copiesDisplay}>{f.copies}</span>
+                          <button type="button" onClick={() => updateFileSetting(f.id, 'copies', f.copies + 1)} style={styles.adjusterBtn}>+</button>
+                        </div>
+                      )}
+
+                      {/* Flat rate info for passport */}
+                      {isPassport && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#ede9fe', borderRadius: '8px', padding: '4px 10px' }}>
+                          <span style={{ fontSize: '11px', color: '#7c3aed', fontWeight: 700 }}>
+                            ₹{shop.pricing?.passportRate || 30} flat rate
+                          </span>
+                          <span style={{ fontSize: '10px', color: '#a78bfa' }}>• All copies included</span>
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Priority Print option */}
@@ -498,13 +605,46 @@ export default function UploadPage() {
                   {files.map(f => {
                     const bwRate = shop.pricing?.bwRate || 2;
                     const colorRate = shop.pricing?.colorRate || 8;
-                    const rate = f.colorMode === 'color' ? colorRate : bwRate;
-                    const cost = f.pages * f.copies * rate;
+                    const passportRate = shop.pricing?.passportRate || 30;
+                    const photoBwRate = shop.pricing?.photoBwRate !== undefined ? shop.pricing.photoBwRate : 5;
+                    const photoColorRate = shop.pricing?.photoColorRate !== undefined ? shop.pricing.photoColorRate : 10;
+                    const isPassport = f.imageType === 'passport' || f.name.toLowerCase().startsWith('passport');
+                    const isFormatImage = ['.jpg', '.jpeg', '.png'].some(ext => f.name.toLowerCase().endsWith(ext));
+                    const isImage = isFormatImage && !isPassport;
+                    
+                    let cost = 0;
+                    let displayFormula = '';
+                    if (isPassport) {
+                      cost = passportRate;
+                      displayFormula = `₹${cost} (flat rate)`;
+                    } else if (isImage) {
+                      const rate = f.colorMode === 'color' ? photoColorRate : photoBwRate;
+                      cost = f.copies * rate;
+                      displayFormula = `${f.copies} copies (${f.colorMode === 'color' ? 'Color' : 'B&W'} Photo) = ₹${cost}`;
+                    } else {
+                      const rate = f.colorMode === 'color' ? colorRate : bwRate;
+                      cost = Math.round(f.pages * f.copies * rate);
+                      displayFormula = `${f.pages} pg × ${f.copies} (${f.colorMode === 'color' ? 'Color' : 'B&W'}) = ₹${cost}`;
+                    }
+
                     return (
                       <div key={f.id} style={styles.breakdownRow}>
-                        <span style={styles.breakdownFileName}>{f.name}</span>
+                        <span style={styles.breakdownFileName}>
+                          {f.name}
+                          {(isPassport || isImage) && (
+                            <span style={{
+                              marginLeft: '6px', fontSize: '10px',
+                              background: isPassport ? '#faf5ff' : '#f0fdfa',
+                              color: isPassport ? '#7c3aed' : '#0d9488',
+                              border: `1px solid ${isPassport ? '#e9d5ff' : '#99f6e4'}`,
+                              borderRadius: '4px', padding: '1px 5px', fontWeight: 700
+                            }}>
+                              {isPassport ? 'PASSPORT' : 'PHOTO'}
+                            </span>
+                          )}
+                        </span>
                         <span style={styles.breakdownVal}>
-                          {f.pages} pg × {f.copies} ({f.colorMode === 'color' ? 'Color' : 'B&W'}) = ₹{cost}
+                          {displayFormula}
                         </span>
                       </div>
                     );
@@ -561,6 +701,17 @@ export default function UploadPage() {
           </div>
         )}
       </div>
+      {passportImage && (
+        <PassportPhotoMaker
+          imageSource={passportImage}
+          onClose={() => {
+            setPassportImage(null);
+            setPassportTargetFileId(null);
+          }}
+          onSave={handleSavePassportSheet}
+          mode="customer"
+        />
+      )}
     </div>
   );
 }

@@ -43,6 +43,12 @@ const orderSchema = new mongoose.Schema({
     paperSize: {
       type: String,
       default: 'A4'
+    },
+    // Image classification type (for billing/UI details)
+    imageType: {
+      type: String,
+      enum: ['normal', 'passport'],
+      default: 'normal'
     }
   }],
   // Total calculated cost in INR (₹)

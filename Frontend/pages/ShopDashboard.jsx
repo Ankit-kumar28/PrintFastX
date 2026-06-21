@@ -1,9 +1,10 @@
 // pages/ShopDashboard.jsx
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import PrintQRPoster from '../components/PrintQRPoster';
+import PassportPhotoMaker from '../components/PassportPhotoMaker';
 import { 
   LayoutDashboard, 
   QrCode, 
@@ -20,7 +21,8 @@ import {
   Check, 
   Trash2,
   Menu,
-  FileText
+  FileText,
+  Camera
 } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -52,6 +54,7 @@ export default function ShopDashboard() {
 
   // Active Print Popover State
   const [activePrintOrder, setActivePrintOrder] = useState(null);
+  const [passportImageSource, setPassportImageSource] = useState(null);
   const [confirmDeleteOrder, setConfirmDeleteOrder] = useState(null);
 
   // Settings Toggles & Form State
@@ -61,6 +64,9 @@ export default function ShopDashboard() {
     bwRate: 2,
     colorRate: 8,
     priorityFee: 10,
+    passportRate: 30,
+    photoBwRate: 5,
+    photoColorRate: 10,
     autoDeleteHours: 24,
     shopName: '',
     ownerName: '',
@@ -86,6 +92,9 @@ export default function ShopDashboard() {
         bwRate: updatedShop.pricing?.bwRate || 2,
         colorRate: updatedShop.pricing?.colorRate || 8,
         priorityFee: updatedShop.pricing?.priorityFee || 10,
+        passportRate: updatedShop.pricing?.passportRate || 30,
+        photoBwRate: updatedShop.pricing?.photoBwRate || 5,
+        photoColorRate: updatedShop.pricing?.photoColorRate || 10,
         autoDeleteHours: updatedShop.autoDeleteHours || 24,
         shopName: updatedShop.shopName || '',
         ownerName: updatedShop.ownerName || '',
@@ -177,6 +186,9 @@ export default function ShopDashboard() {
       bwRate: parsed.pricing?.bwRate || 2,
       colorRate: parsed.pricing?.colorRate || 8,
       priorityFee: parsed.pricing?.priorityFee || 10,
+      passportRate: parsed.pricing?.passportRate || 30,
+      photoBwRate: parsed.pricing?.photoBwRate || 5,
+      photoColorRate: parsed.pricing?.photoColorRate || 10,
       autoDeleteHours: parsed.autoDeleteHours || 24,
       shopName: parsed.shopName || '',
       ownerName: parsed.ownerName || '',
@@ -393,8 +405,40 @@ export default function ShopDashboard() {
     toast.success('Logged out successfully');
   };
 
+  const calculateOrderAmount = useCallback((order) => {
+    if (!order || !order.files) return 0;
+    const bwRate = shop?.pricing?.bwRate || 2;
+    const colorRate = shop?.pricing?.colorRate || 8;
+    const priorityFee = shop?.pricing?.priorityFee || 10;
+    const passportRate = shop?.pricing?.passportRate || 30;
+    const photoBwRate = shop?.pricing?.photoBwRate || 5;
+    const photoColorRate = shop?.pricing?.photoColorRate || 10;
+
+    let subtotal = 0;
+    order.files.forEach(f => {
+      const isPassport = f.imageType === 'passport' || f.fileName?.toLowerCase().startsWith('passport');
+      const isImage = !isPassport && ['.jpg', '.jpeg', '.png'].some(ext => f.fileName?.toLowerCase().endsWith(ext));
+      if (isPassport) {
+        subtotal += passportRate;
+      } else if (isImage) {
+        const baseRate = f.colorMode === 'color' ? photoColorRate : photoBwRate;
+        subtotal += Math.round((f.copies || 1) * baseRate);
+      } else {
+        const baseRate = f.colorMode === 'color' ? colorRate : bwRate;
+        let finalRate = baseRate;
+        if (f.sides === 'double') finalRate = Math.round(baseRate * 0.6);
+        subtotal += Math.round((f.pages || 1) * (f.copies || 1) * finalRate);
+      }
+    });
+
+    if (order.priority) {
+      subtotal += priorityFee;
+    }
+    return subtotal;
+  }, [shop]);
+
   // Derive stats for Dashboard / Analytics views
-  const totalRevenue = orders.reduce((s, o) => s + (o.amount || 0), 0);
+  const totalRevenue = orders.reduce((s, o) => s + calculateOrderAmount(o), 0);
   const pendingCount = orders.filter(o => o.status === 'pending').length;
   
   // Date-based Analytics calculations
@@ -404,7 +448,7 @@ export default function ShopDashboard() {
     new Date(o.createdAt).toDateString() === now.toDateString()
   );
   const todayOrders = todayOrdersList.length;
-  const todayRevenue = todayOrdersList.reduce((s, o) => s + (o.amount || 0), 0);
+  const todayRevenue = todayOrdersList.reduce((s, o) => s + calculateOrderAmount(o), 0);
 
   const yesterdayDate = new Date();
   yesterdayDate.setDate(now.getDate() - 1);
@@ -412,7 +456,7 @@ export default function ShopDashboard() {
     new Date(o.createdAt).toDateString() === yesterdayDate.toDateString()
   );
   const yesterdayOrders = yesterdayOrdersList.length;
-  const yesterdayRevenue = yesterdayOrdersList.reduce((s, o) => s + (o.amount || 0), 0);
+  const yesterdayRevenue = yesterdayOrdersList.reduce((s, o) => s + calculateOrderAmount(o), 0);
 
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(now.getDate() - 7);
@@ -420,7 +464,7 @@ export default function ShopDashboard() {
     new Date(o.createdAt) >= sevenDaysAgo
   );
   const weeklyOrders = weeklyOrdersList.length;
-  const weeklyRevenue = weeklyOrdersList.reduce((s, o) => s + (o.amount || 0), 0);
+  const weeklyRevenue = weeklyOrdersList.reduce((s, o) => s + calculateOrderAmount(o), 0);
 
   // SVG Chart data calculation
   let bwPages = 0;
@@ -804,9 +848,18 @@ export default function ShopDashboard() {
                   <tbody>
                     {filteredOrders.map(order => {
                       const isExpanded = !!expandedOrders[order.token];
-                      const totalPages = order.files?.reduce((acc, f) => acc + (f.pages || 1) * (f.copies || 1), 0) || 0;
-                      const totalCopies = order.files?.reduce((acc, f) => acc + (f.copies || 1), 0) || 0;
                       const hasColor = order.files?.some(f => f.colorMode === 'color');
+                      
+                      const hasPassport = order.files?.some(f => f.imageType === 'passport' || f.fileName?.toLowerCase().startsWith('passport'));
+                      const hasImage = order.files?.some(f => !f.fileName?.toLowerCase().startsWith('passport') && ['.jpg', '.jpeg', '.png'].some(ext => f.fileName.toLowerCase().endsWith(ext)));
+                      const hasDoc = order.files?.some(f => !f.fileName?.toLowerCase().startsWith('passport') && !['.jpg', '.jpeg', '.png'].some(ext => f.fileName.toLowerCase().endsWith(ext)));
+                      const isMixedOrder = (hasPassport ? 1 : 0) + (hasImage ? 1 : 0) + (hasDoc ? 1 : 0) > 1;
+                      
+                      const isPassportOrder = !isMixedOrder && hasPassport;
+                      const isImageOrder = !isMixedOrder && !isPassportOrder && hasImage;
+
+                      const totalPages = (isImageOrder || isPassportOrder) ? '-' : (order.files?.reduce((acc, f) => acc + (f.pages || 1) * (f.copies || 1), 0) || 0);
+                      const totalCopies = order.files?.reduce((acc, f) => acc + (f.copies || 1), 0) || 0;
                       
                       const fileNameDisplay = order.files?.length === 1 
                         ? order.files[0].fileName 
@@ -816,16 +869,21 @@ export default function ShopDashboard() {
                         ? order.files[0].copies 
                         : 'Mixed';
 
-                      const modeDisplay = order.files?.length === 1 
-                        ? (order.files[0].colorMode === 'color' ? 'Color' : 'B&W') 
-                        : (hasColor ? 'Mixed' : 'B&W');
+                      let modeDisplay;
+                      if (isMixedOrder) modeDisplay = 'Mixed';
+                      else if (isPassportOrder) modeDisplay = 'Passport';
+                      else if (isImageOrder) modeDisplay = 'Photo';
+                      else {
+                        modeDisplay = order.files?.length === 1 
+                          ? (order.files[0].colorMode === 'color' ? 'Color' : 'B&W') 
+                          : (hasColor ? 'Mixed' : 'B&W');
+                      }
 
                       const isPriorityPending = order.priority && order.status !== 'completed';
 
                       return (
-                        <>
+                        <Fragment key={order.token}>
                           <tr 
-                            key={order.token} 
                             className="order-row" 
                             style={{
                               ...styles.tableRow,
@@ -834,18 +892,21 @@ export default function ShopDashboard() {
                           >
                             <td style={{
                               ...styles.td,
-                              ...(isPriorityPending ? { borderLeft: '4px solid #d97706' } : {})
+                              ...(isPriorityPending ? { borderLeft: '4px solid #d97706' } : isMixedOrder ? { borderLeft: '4px solid #0284c7' } : isPassportOrder ? { borderLeft: '4px solid #7c3aed' } : isImageOrder ? { borderLeft: '4px solid #0d9488' } : { borderLeft: '4px solid transparent' })
                             }}>
-                              <span 
-                                onClick={() => handleToggleStatus(order)}
-                                style={{
-                                  ...tokenLabelStyle(order.status, order.priority),
-                                  cursor: 'pointer'
-                                }}
-                                title="Click to toggle status (Completed / Pending)"
-                              >
-                                {order.token}
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '16px' }}>{isMixedOrder ? '🗂️' : isPassportOrder ? '🪪' : isImageOrder ? '🖼️' : '📕'}</span>
+                                <span 
+                                  onClick={() => handleToggleStatus(order)}
+                                  style={{
+                                    ...tokenLabelStyle(order.status, order.priority),
+                                    cursor: 'pointer'
+                                  }}
+                                  title="Click to toggle status (Completed / Pending)"
+                                >
+                                  {order.token}
+                                </span>
+                              </div>
                             </td>
                             <td style={styles.td}>
                               <button 
@@ -879,12 +940,21 @@ export default function ShopDashboard() {
                               <span style={{ fontWeight: 600, color: '#475569' }}>{copiesDisplay}</span>
                             </td>
                             <td style={styles.td}>
-                              <span style={styles.badge(modeDisplay === 'Color' ? '#ede9fe' : '#f1f5f9', modeDisplay === 'Color' ? '#7c3aed' : '#475569')}>
+                              <span style={styles.badge(
+                                modeDisplay === 'Mixed' ? '#e0f2fe' :
+                                modeDisplay === 'Color' ? '#ede9fe' : 
+                                modeDisplay === 'Passport' ? '#ede9fe' : 
+                                modeDisplay === 'Photo' ? '#ccfbf1' : '#f1f5f9', 
+                                modeDisplay === 'Mixed' ? '#0284c7' :
+                                modeDisplay === 'Color' ? '#7c3aed' : 
+                                modeDisplay === 'Passport' ? '#7c3aed' : 
+                                modeDisplay === 'Photo' ? '#0d9488' : '#475569'
+                              )}>
                                 {modeDisplay}
                               </span>
                             </td>
                             <td style={styles.td}>
-                              <span style={styles.costText}>₹{order.amount}</span>
+                              <span style={styles.costText}>₹{calculateOrderAmount(order)}</span>
                             </td>
 
                             <td style={styles.td}>
@@ -917,36 +987,41 @@ export default function ShopDashboard() {
                           </tr>
 
                           {/* Expanded File Rows */}
-                          {isExpanded && order.files?.map((file, idx) => (
-                            <tr 
-                              key={`${order.token}-file-${idx}`} 
-                              style={{
-                                ...styles.expandedRow,
-                                ...(isPriorityPending ? { background: '#fffbeb' } : {})
-                              }}
-                            >
-                              <td style={{
-                                ...styles.td,
-                                ...(isPriorityPending ? { borderLeft: '4px solid #d97706' } : {})
-                              }}></td>
-                              <td style={styles.td}></td>
-                              <td style={styles.td} colSpan={4}>
-                                <div style={{ paddingLeft: '16px', fontSize: '13px', color: '#475569' }}>
-                                  📄 <span style={{ fontWeight: 600 }}>{file.fileName}</span>
-                                  <span style={{ marginLeft: '10px', color: '#94a3b8' }}>
-                                    {file.pages} pages &times; {file.copies} copies ({file.sides === 'double' ? 'Double' : 'Single'} Side)
+                          {isExpanded && order.files?.map((file, idx) => {
+                            const fIsPassport = file.imageType === 'passport' || file.fileName?.toLowerCase().startsWith('passport');
+                            const fIsImage = !fIsPassport && ['.jpg', '.jpeg', '.png'].some(ext => file.fileName.toLowerCase().endsWith(ext));
+                            return (
+                              <tr 
+                                key={`${order.token}-file-${idx}`} 
+                                style={{
+                                  ...styles.expandedRow,
+                                  ...(isPriorityPending ? { background: '#fffbeb' } : {})
+                                }}
+                              >
+                                <td style={{
+                                  ...styles.td,
+                                  ...(isPriorityPending ? { borderLeft: '4px solid #d97706' } : isMixedOrder ? { borderLeft: '4px solid #0284c7' } : isPassportOrder ? { borderLeft: '4px solid #7c3aed' } : isImageOrder ? { borderLeft: '4px solid #0d9488' } : { borderLeft: '4px solid transparent' })
+                                }}></td>
+                                <td style={styles.td}></td>
+                                <td style={styles.td} colSpan={4}>
+                                  <div style={{ paddingLeft: '16px', fontSize: '13px', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span>{fIsPassport ? '🪪' : fIsImage ? '🖼️' : '📄'}</span> 
+                                    <span style={{ fontWeight: 600 }}>{file.fileName}</span>
+                                    <span style={{ marginLeft: '10px', color: '#94a3b8' }}>
+                                      {fIsPassport ? `Passport Print Set` : fIsImage ? `Photo Print \u00D7 ${file.copies} copies` : `${file.pages} pages \u00D7 ${file.copies} copies (${file.sides === 'double' ? 'Double' : 'Single'} Side)`}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td style={styles.td}>
+                                  <span style={{ fontSize: '13px', color: '#64748b' }}>
+                                    {fIsPassport ? 'Passport' : fIsImage ? 'Photo' : (file.colorMode === 'color' ? 'Color' : 'B&W')}
                                   </span>
-                                </div>
-                              </td>
-                              <td style={styles.td}>
-                                <span style={{ fontSize: '13px', color: '#64748b' }}>
-                                  {file.colorMode === 'color' ? 'Color' : 'B&W'}
-                                </span>
-                              </td>
-                              <td style={styles.td}></td>
-                            </tr>
-                          ))}
-                        </>
+                                </td>
+                                <td style={styles.td}></td>
+                              </tr>
+                            );
+                          })}
+                        </Fragment>
                       );
                     })}
                   </tbody>
@@ -1166,6 +1241,18 @@ export default function ShopDashboard() {
                       <span style={{ fontSize: '14px', color: '#0f172a', fontWeight: 800 }}>₹ {settingsForm.colorRate} / page</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
+                      <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 600 }}>🖼️ Normal B&W Photo Rate:</span>
+                      <span style={{ fontSize: '14px', color: '#0f172a', fontWeight: 800 }}>₹ {settingsForm.photoBwRate} / copy</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
+                      <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 600 }}>🖼️ Normal Color Photo Rate:</span>
+                      <span style={{ fontSize: '14px', color: '#0f172a', fontWeight: 800 }}>₹ {settingsForm.photoColorRate} / copy</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
+                      <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 600 }}>📸 Passport Photo Rate:</span>
+                      <span style={{ fontSize: '14px', color: '#7c3aed', fontWeight: 800 }}>₹ {settingsForm.passportRate} / set</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
                       <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 600 }}>Priority Order Fee:</span>
                       <span style={{ fontSize: '14px', color: '#0f172a', fontWeight: 800 }}>₹ {settingsForm.priorityFee}</span>
                     </div>
@@ -1204,6 +1291,46 @@ export default function ShopDashboard() {
                     </div>
 
                     <div style={styles.formGroup}>
+                      <label style={{ ...styles.settingsLabel, color: '#0d9488' }}>🖼️ Normal B&W Photo Rate (₹ per copy)</label>
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        value={settingsForm.photoBwRate}
+                        onChange={e => setSettingsForm({ ...settingsForm, photoBwRate: parseFloat(e.target.value) })}
+                        style={{ ...styles.settingsInput, border: '1.5px solid #0d9488' }}
+                        required
+                      />
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <label style={{ ...styles.settingsLabel, color: '#0d9488' }}>🖼️ Normal Color Photo Rate (₹ per copy)</label>
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        value={settingsForm.photoColorRate}
+                        onChange={e => setSettingsForm({ ...settingsForm, photoColorRate: parseFloat(e.target.value) })}
+                        style={{ ...styles.settingsInput, border: '1.5px solid #0d9488' }}
+                        required
+                      />
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <label style={{ ...styles.settingsLabel, color: '#7c3aed' }}>📸 Passport Photo Rate (₹ per set)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={settingsForm.passportRate}
+                        onChange={e => setSettingsForm({ ...settingsForm, passportRate: parseFloat(e.target.value) })}
+                        style={{ ...styles.settingsInput, border: '1.5px solid #7c3aed' }}
+                        required
+                      />
+                      <span style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>Charged flat per passport photo order, regardless of number of copies</span>
+                    </div>
+
+                    <div style={styles.formGroup}>
                       <label style={styles.settingsLabel}>Priority Order Fee (₹)</label>
                       <input
                         type="number"
@@ -1238,6 +1365,9 @@ export default function ShopDashboard() {
                             bwRate: shop.pricing?.bwRate || 2,
                             colorRate: shop.pricing?.colorRate || 8,
                             priorityFee: shop.pricing?.priorityFee || 10,
+                            passportRate: shop.pricing?.passportRate || 30,
+                            photoBwRate: shop.pricing?.photoBwRate || 5,
+                            photoColorRate: shop.pricing?.photoColorRate || 10,
                             autoDeleteHours: shop.autoDeleteHours || 24
                           }));
                         }}
@@ -1424,9 +1554,6 @@ export default function ShopDashboard() {
                   </form>
                 )}
               </div>
-
-              {/* Session Log Out Card */}
-            
             </div>
           </div>
         )}
@@ -1483,85 +1610,176 @@ export default function ShopDashboard() {
             </p>
 
             {/* Files List mapping */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px', maxHeight: '240px', overflowY: 'auto', paddingRight: '4px' }}>
-              {activePrintOrder.files?.map((file, idx) => (
-                <div key={idx} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '16px',
-                  padding: '12px 16px',
-                  gap: '12px'
-                }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {file.fileName}
-                    </p>
-                    <p style={{ fontSize: '11px', color: '#94a3b8', margin: '4px 0 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span>{file.pages} pages</span>
-                      <span>&bull;</span>
-                      <span style={{
-                        background: file.colorMode === 'color' ? '#f5f3ff' : '#f1f5f9',
-                        color: file.colorMode === 'color' ? '#7c3aed' : '#475569',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        fontWeight: 700,
-                        fontSize: '10px'
-                      }}>
-                        {file.colorMode === 'color' ? 'Color' : 'B&W'}
-                      </span>
-                      {file.copies > 1 && (
-                        <>
-                          <span>&bull;</span>
-                          <span style={{ fontWeight: 700 }}>{file.copies} copies</span>
-                        </>
-                      )}
-                      <span>&bull;</span>
-                      <span style={{ color: '#10b981', fontWeight: 800 }}>✓</span>
-                    </p>
-                  </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px', maxHeight: '320px', overflowY: 'auto', paddingRight: '4px' }}>
+              {activePrintOrder.files?.map((file, idx) => {
+                const isPassport = file.imageType === 'passport' || file.fileName?.toLowerCase().startsWith('passport');
+                const isImage = !isPassport && ['.jpg', '.jpeg', '.png'].some(ext => file.fileName.toLowerCase().endsWith(ext));
+                
+                // Rate & Price calculation
+                let appliedRate = 0;
+                let finalFileCost = 0;
+                let rateFormulaText = '';
+
+                if (isPassport) {
+                  appliedRate = shop?.pricing?.passportRate || 30;
+                  finalFileCost = appliedRate;
+                  rateFormulaText = `Flat Rate: ₹${appliedRate}`;
+                } else if (isImage) {
+                  appliedRate = file.colorMode === 'color'
+                    ? (shop?.pricing?.photoColorRate || 10)
+                    : (shop?.pricing?.photoBwRate || 5);
+                  finalFileCost = file.copies * appliedRate;
+                  rateFormulaText = `Rate: ₹${appliedRate}/copy × ${file.copies} copies`;
+                } else {
+                  appliedRate = file.colorMode === 'color'
+                    ? (shop?.pricing?.colorRate || 8)
+                    : (shop?.pricing?.bwRate || 2);
                   
-                  {/* Print and download action icon controls */}
-                  <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                    <button
-                      onClick={() => handleDownloadFile(activePrintOrder, file)}
-                      style={{
-                        background: '#f1f5f9',
-                        border: 'none',
-                        borderRadius: '8px',
-                        padding: '8px',
-                        cursor: 'pointer',
-                        color: '#475569',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                      title="Download File"
-                    >
-                      <Download size={14} />
-                    </button>
-                    <button
-                      onClick={() => handlePrintFile(activePrintOrder, file)}
-                      style={{
-                        background: '#0d9488',
-                        border: 'none',
-                        borderRadius: '8px',
-                        padding: '8px',
-                        cursor: 'pointer',
-                        color: '#fff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                      title="Print File"
-                    >
-                      <Printer size={14} />
-                    </button>
+                  let calculatedRate = appliedRate;
+                  if (file.sides === 'double') calculatedRate = Math.round(appliedRate * 0.6);
+                  
+                  finalFileCost = Math.round((file.pages || 1) * (file.copies || 1) * calculatedRate);
+                  rateFormulaText = `Rate: ₹${calculatedRate}/page × ${file.pages} pages × ${file.copies} copies`;
+                }
+
+                return (
+                  <div key={idx} style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    background: isPassport ? '#faf5ff' : isImage ? '#f0fdfa' : '#f8fafc',
+                    border: `1px solid ${isPassport ? '#ddd6fe' : isImage ? '#99f6e4' : '#e2e8f0'}`,
+                    borderLeft: `4px solid ${isPassport ? '#7c3aed' : isImage ? '#0d9488' : '#94a3b8'}`,
+                    borderRadius: '14px',
+                    padding: '12px 14px',
+                    gap: '10px'
+                  }}>
+                    {/* Top Row: File Details & Actions */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        {/* File name row */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '5px' }}>
+                          <span style={{ fontSize: '16px' }}>
+                            {isPassport ? '🪪' : isImage ? '🖼️' : '📕'}
+                          </span>
+                          <p style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {file.fileName}
+                          </p>
+                          {(isPassport || isImage) && (
+                            <span style={{
+                              flexShrink: 0,
+                              fontSize: '10px', fontWeight: 800,
+                              background: isPassport ? '#ede9fe' : '#ccfbf1',
+                              color: isPassport ? '#7c3aed' : '#0d9488',
+                              border: `1px solid ${isPassport ? '#ddd6fe' : '#6ee7b7'}`,
+                              borderRadius: '5px', padding: '1px 6px'
+                            }}>
+                              {isPassport ? 'PASSPORT' : 'PHOTO'}
+                            </span>
+                          )}
+                        </div>
+                        {/* File meta row */}
+                        <p style={{ fontSize: '11px', color: '#64748b', margin: 0, display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          {isPassport ? (
+                            <span style={{ color: '#7c3aed', fontWeight: 700 }}>
+                              📸 Passport Print Set
+                            </span>
+                          ) : isImage ? (
+                            <span style={{ color: '#0d9488', fontWeight: 700 }}>
+                              🖼️ Photo Print
+                            </span>
+                          ) : (
+                            <span>{file.pages} pages ({file.sides === 'double' ? 'Double' : 'Single'} Side)</span>
+                          )}
+                          <span>•</span>
+                          <span style={{
+                            background: file.colorMode === 'color' ? '#f5f3ff' : '#f1f5f9',
+                            color: file.colorMode === 'color' ? '#7c3aed' : '#475569',
+                            padding: '1px 6px', borderRadius: '4px', fontWeight: 700, fontSize: '10px'
+                          }}>
+                            {file.colorMode === 'color' ? 'Color' : 'B&W'}
+                          </span>
+                          {!isPassport && (
+                            <>
+                              <span>•</span>
+                              <span style={{ fontWeight: 700 }}>{file.copies} copies</span>
+                            </>
+                          )}
+                        </p>
+                      </div>
+                      
+                      {/* Action icon controls */}
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
+                        {isImage && (
+                          <button
+                            onClick={() => {
+                              const fileUrl = `${API}/api/orders/file/${activePrintOrder._id}/${file._id}`;
+                              setPassportImageSource(fileUrl);
+                            }}
+                            style={{
+                              background: isPassport ? '#ede9fe' : '#ccfbf1',
+                              border: `1px solid ${isPassport ? '#ddd6fe' : '#6ee7b7'}`,
+                              borderRadius: '8px',
+                              padding: '7px 10px',
+                              cursor: 'pointer',
+                              color: isPassport ? '#7c3aed' : '#0d9488',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '11px',
+                              fontWeight: 700
+                            }}
+                            title={isPassport ? 'Open Passport Editor' : 'Open Image Editor'}
+                          >
+                            <Camera size={14} />
+                            {isPassport ? 'Passport' : 'Edit'}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDownloadFile(activePrintOrder, file)}
+                          style={{
+                            background: '#f1f5f9', border: 'none', borderRadius: '8px',
+                            padding: '8px', cursor: 'pointer', color: '#475569',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                          }}
+                          title="Download File"
+                        >
+                          <Download size={14} />
+                        </button>
+                        <button
+                          onClick={() => handlePrintFile(activePrintOrder, file)}
+                          style={{
+                            background: '#0d9488', border: 'none', borderRadius: '8px',
+                            padding: '8px', cursor: 'pointer', color: '#fff',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                          }}
+                          title="Print File"
+                        >
+                          <Printer size={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Bottom Row: Detailed Fare Breakdown per file */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      background: 'rgba(255, 255, 255, 0.6)',
+                      borderRadius: '8px',
+                      padding: '6px 10px',
+                      fontSize: '11px',
+                      border: '1px solid rgba(0, 0, 0, 0.03)'
+                    }}>
+                      <span style={{ color: '#64748b', fontWeight: 500 }}>
+                        {rateFormulaText}
+                      </span>
+                      <span style={{ color: '#0f172a', fontWeight: 800 }}>
+                        ₹{finalFileCost}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Footer action button */}
@@ -1673,6 +1891,14 @@ export default function ShopDashboard() {
             </div>
           </div>
         </div>
+      )}
+      {passportImageSource && (
+        <PassportPhotoMaker
+          imageSource={passportImageSource}
+          onClose={() => setPassportImageSource(null)}
+          onSave={() => setPassportImageSource(null)}
+          mode="shopkeeper"
+        />
       )}
     </div>
   );
