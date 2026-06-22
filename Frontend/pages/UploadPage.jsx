@@ -710,6 +710,11 @@ export default function UploadPage() {
           }}
           onSave={handleSavePassportSheet}
           mode="customer"
+          batchFiles={files.filter(f => ['.jpg', '.jpeg', '.png'].some(ext => f.name.toLowerCase().endsWith(ext))).map(f => ({
+            id: f.id,
+            fileName: f.name,
+            url: f.file
+          }))}
         />
       )}
     </div>

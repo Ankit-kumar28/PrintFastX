@@ -1902,6 +1902,11 @@ export default function ShopDashboard() {
           onClose={() => setPassportImageSource(null)}
           onSave={() => setPassportImageSource(null)}
           mode="shopkeeper"
+          batchFiles={activePrintOrder?.files?.filter(f => ['.jpg', '.jpeg', '.png'].some(ext => f.fileName?.toLowerCase().endsWith(ext))).map(f => ({
+            id: f._id,
+            fileName: f.fileName,
+            url: `${API}/api/orders/file/${activePrintOrder._id}/${f._id}`
+          }))}
         />
       )}
     </div>

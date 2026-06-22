@@ -46,6 +46,44 @@ export default function PassportPhotoMaker({
   const wizardStep = propsWizardStep !== undefined ? propsWizardStep : localWizardStep;
   const setWizardStep = propsSetWizardStep !== undefined ? propsSetWizardStep : setLocalWizardStep;
 
+  const renderRangeSlider = (label, value, min, max, step, onChange, unit = '') => {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%' }}>
+        <div style={S.sliderLabelRow}>
+          <span>{label}</span>
+          <span>{value}{unit}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
+          <button
+            type="button"
+            onClick={() => onChange(Math.max(min, value - step))}
+            style={S.sliderStepBtn}
+            className="btn-action"
+          >
+            -
+          </button>
+          <input
+            type="range"
+            min={min}
+            max={max}
+            step={step}
+            value={value}
+            onChange={e => onChange(parseInt(e.target.value) || 0)}
+            style={{ flex: 1, cursor: 'pointer' }}
+          />
+          <button
+            type="button"
+            onClick={() => onChange(Math.min(max, value + step))}
+            style={S.sliderStepBtn}
+            className="btn-action"
+          >
+            +
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   // ── Image State ────────────────────────────────────────────────────────────
   const [croppedImage, setCroppedImage] = useState(null); // cropped frame from Screen 1
   const [processedAsset, setProcessedAsset] = useState(null); // final baked photo from Screen 2
@@ -1062,6 +1100,24 @@ export default function PassportPhotoMaker({
     toast.success("Downloaded single asset!");
   };
 
+  const getDynamicCursor = () => {
+    if (wizardStep === 2 && bgMethod === 'brush') {
+      let cssSize = brushSize;
+      if (editorCanvasRef.current) {
+        const rect = editorCanvasRef.current.getBoundingClientRect();
+        cssSize = brushSize * (rect.width / CANVAS_W);
+      } else {
+        cssSize = brushSize * 0.45;
+      }
+      cssSize = Math.max(12, Math.round(cssSize));
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${cssSize}" height="${cssSize}" viewBox="0 0 ${cssSize} ${cssSize}"><circle cx="${cssSize/2}" cy="${cssSize/2}" r="${cssSize/2 - 1}" fill="none" stroke="black" stroke-width="1"/><circle cx="${cssSize/2}" cy="${cssSize/2}" r="${cssSize/2 - 2}" fill="none" stroke="white" stroke-width="1"/></svg>`;
+      if (typeof btoa !== 'undefined') {
+        return `url("data:image/svg+xml;base64,${btoa(svg)}") ${Math.round(cssSize/2)} ${Math.round(cssSize/2)}, crosshair`;
+      }
+    }
+    return bgMethod === 'chroma' ? 'crosshair' : 'default';
+  };
+
   return (
     <div style={S.screenWrapper}>
       {wizardStep === 1 && (
@@ -1135,35 +1191,25 @@ export default function PassportPhotoMaker({
 
               {/* Sliders Container */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '420px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div style={S.sliderLabelRow}>
-                    <span>🔎 Zoom Level</span>
-                    <span>{zoom}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="20"
-                    max="200"
-                    value={zoom}
-                    onChange={e => setZoom(parseInt(e.target.value))}
-                    style={{ width: '100%' }}
-                  />
-                </div>
+                {renderRangeSlider(
+                  "🔎 Zoom Level",
+                  zoom,
+                  20,
+                  200,
+                  5,
+                  val => setZoom(val),
+                  "%"
+                )}
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div style={S.sliderLabelRow}>
-                    <span>🔄 Fine-Grain Rotation</span>
-                    <span>{rotation}°</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="-180"
-                    max="180"
-                    value={rotation}
-                    onChange={e => setRotation(parseInt(e.target.value))}
-                    style={{ width: '100%' }}
-                  />
-                </div>
+                {renderRangeSlider(
+                  "🔄 Fine-Grain Rotation",
+                  rotation,
+                  -180,
+                  180,
+                  1,
+                  val => setRotation(val),
+                  "°"
+                )}
               </div>
             </div>
           </div>
@@ -1274,7 +1320,10 @@ export default function PassportPhotoMaker({
                 onMouseMove={handleDrag}
                 onMouseUp={handleStopDrag}
                 onMouseLeave={handleStopDrag}
-                style={S.mainCanvas}
+                style={{
+                  ...S.mainCanvas,
+                  cursor: getDynamicCursor()
+                }}
               />
             </div>
 
@@ -1338,61 +1387,45 @@ export default function PassportPhotoMaker({
                   </button>
                 </div>
                 <div style={S.slidersGrid}>
-                  <div style={S.sliderControlGroup}>
-                    <div style={S.sliderLabelRow}>
-                      <span>🔆 Brightness</span>
-                      <span>{brightness}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="50"
-                      max="150"
-                      value={brightness}
-                      onChange={e => setBrightness(parseInt(e.target.value))}
-                    />
-                  </div>
+                  {renderRangeSlider(
+                    "🔆 Brightness",
+                    brightness,
+                    50,
+                    150,
+                    2,
+                    val => setBrightness(val),
+                    "%"
+                  )}
 
-                  <div style={S.sliderControlGroup}>
-                    <div style={S.sliderLabelRow}>
-                      <span>⚡ Contrast</span>
-                      <span>{contrast}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="50"
-                      max="150"
-                      value={contrast}
-                      onChange={e => setContrast(parseInt(e.target.value))}
-                    />
-                  </div>
+                  {renderRangeSlider(
+                    "⚡ Contrast",
+                    contrast,
+                    50,
+                    150,
+                    2,
+                    val => setContrast(val),
+                    "%"
+                  )}
 
-                  <div style={S.sliderControlGroup}>
-                    <div style={S.sliderLabelRow}>
-                      <span>🌈 Saturation</span>
-                      <span>{saturation}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="200"
-                      value={saturation}
-                      onChange={e => setSaturation(parseInt(e.target.value))}
-                    />
-                  </div>
+                  {renderRangeSlider(
+                    "🌈 Saturation",
+                    saturation,
+                    0,
+                    200,
+                    5,
+                    val => setSaturation(val),
+                    "%"
+                  )}
 
-                  <div style={S.sliderControlGroup}>
-                    <div style={S.sliderLabelRow}>
-                      <span>✨ Sharpness</span>
-                      <span>{sharpness}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={sharpness}
-                      onChange={e => setSharpness(parseInt(e.target.value))}
-                    />
-                  </div>
+                  {renderRangeSlider(
+                    "✨ Sharpness",
+                    sharpness,
+                    0,
+                    100,
+                    5,
+                    val => setSharpness(val),
+                    "%"
+                  )}
                 </div>
               </div>
 
@@ -1428,7 +1461,7 @@ export default function PassportPhotoMaker({
                       style={S.colorPickerBox}
                       className="btn-action"
                     />
-                    <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>Spectrum</span>
+                    <span style={{ fontSize: '14px', color: '#0e2544ff', fontWeight: 600 }}>Spectrum</span>
                   </div>
                 </div>
               </div>
@@ -1443,14 +1476,14 @@ export default function PassportPhotoMaker({
                     style={{ ...S.brushBtn, ...(bgMethod === 'chroma' ? S.brushBtnActive : {}) }}
                     className="btn-action"
                   >
-                    鼠标 Color Click Tool
+                   Color Click Tool
                   </button>
                   <button
                     onClick={() => setBgMethod('brush')}
                     style={{ ...S.brushBtn, ...(bgMethod === 'brush' ? S.brushBtnActive : {}) }}
                     className="btn-action"
                   >
-                    刷 Manual Eraser
+                    Manual Eraser
                   </button>
                 </div>
 
@@ -1459,19 +1492,14 @@ export default function PassportPhotoMaker({
                     <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0 0 8px' }}>
                       Click any color on the face canvas view to crop/mask it out instantly.
                     </p>
-                    <div style={S.sliderControlGroup}>
-                      <div style={S.sliderLabelRow}>
-                        <span>Tolerance Threshold</span>
-                        <span>{tolerance}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="5"
-                        max="80"
-                        value={tolerance}
-                        onChange={e => setTolerance(parseInt(e.target.value))}
-                      />
-                    </div>
+                    {renderRangeSlider(
+                      "Tolerance Threshold",
+                      tolerance,
+                      5,
+                      80,
+                      1,
+                      val => setTolerance(val)
+                    )}
                   </div>
                 )}
 
@@ -1480,19 +1508,15 @@ export default function PassportPhotoMaker({
                     <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0 0 8px' }}>
                       Drag cursor onto canvas to wipe off remaining background nodes.
                     </p>
-                    <div style={S.sliderControlGroup}>
-                      <div style={S.sliderLabelRow}>
-                        <span>Brush Size (px)</span>
-                        <span>{brushSize}px</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="15"
-                        max="240"
-                        value={brushSize}
-                        onChange={e => setBrushSize(parseInt(e.target.value))}
-                      />
-                    </div>
+                    {renderRangeSlider(
+                      "Brush Size (px)",
+                      brushSize,
+                      15,
+                      240,
+                      5,
+                      val => setBrushSize(val),
+                      "px"
+                    )}
                   </div>
                 )}
 
@@ -1667,34 +1691,42 @@ export default function PassportPhotoMaker({
                   </button>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
-                      <span>Gap X</span>
-                      <span style={{ color: '#4f46e5' }}>{gapX}px</span>
-                    </div>
-                    <input type="range" min="0" max="30" value={gapX} onChange={e => setGapX(parseInt(e.target.value))} style={{ width: '100%', accentColor: '#4f46e5' }} />
-                  </div>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
-                      <span>Gap Y</span>
-                      <span style={{ color: '#4f46e5' }}>{gapY}px</span>
-                    </div>
-                    <input type="range" min="0" max="30" value={gapY} onChange={e => setGapY(parseInt(e.target.value))} style={{ width: '100%', accentColor: '#4f46e5' }} />
-                  </div>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
-                      <span>Margin Top</span>
-                      <span style={{ color: '#4f46e5' }}>{marginTop}px</span>
-                    </div>
-                    <input type="range" min="0" max="50" value={marginTop} onChange={e => setMarginTop(parseInt(e.target.value))} style={{ width: '100%', accentColor: '#4f46e5' }} />
-                  </div>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
-                      <span>Margin Left</span>
-                      <span style={{ color: '#4f46e5' }}>{marginLeft}px</span>
-                    </div>
-                    <input type="range" min="0" max="50" value={marginLeft} onChange={e => setMarginLeft(parseInt(e.target.value))} style={{ width: '100%', accentColor: '#4f46e5' }} />
-                  </div>
+                  {renderRangeSlider(
+                    "Gap X",
+                    gapX,
+                    0,
+                    30,
+                    1,
+                    val => setGapX(val),
+                    "px"
+                  )}
+                  {renderRangeSlider(
+                    "Gap Y",
+                    gapY,
+                    0,
+                    30,
+                    1,
+                    val => setGapY(val),
+                    "px"
+                  )}
+                  {renderRangeSlider(
+                    "Margin Top",
+                    marginTop,
+                    0,
+                    50,
+                    1,
+                    val => setMarginTop(val),
+                    "px"
+                  )}
+                  {renderRangeSlider(
+                    "Margin Left",
+                    marginLeft,
+                    0,
+                    50,
+                    1,
+                    val => setMarginLeft(val),
+                    "px"
+                  )}
                 </div>
               </div>
             </div>
@@ -1966,11 +1998,10 @@ const S = {
   colorPickerBox: {
     width: '32px',
     height: '32px',
-    padding: 0,
-    border: 'none',
-    borderRadius: '50%',
-    cursor: 'pointer',
-    background: 'none'
+    borderRadius: '16px',
+    background: 'linear-gradient(to right, #ff0000, #ff9900, #ffff00, #00ff00, #00ffff, #0066ff, #9900ff, #ff00ff)',
+    border: '1px solid #e2e8f0',
+    cursor: 'pointer'
   },
   brushBtn: {
     padding: '10px',
@@ -2142,5 +2173,21 @@ const S = {
     border: '1px solid #cbd5e1',
     padding: '6px 10px',
     color: '#0f172a'
+  },
+  sliderStepBtn: {
+    width: '24px',
+    height: '24px',
+    borderRadius: '6px',
+    border: '1px solid #cbd5e1',
+    background: '#ffffff',
+    color: '#0f172a',
+    fontSize: '14px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    userSelect: 'none',
+    transition: 'all 0.1s'
   }
 };

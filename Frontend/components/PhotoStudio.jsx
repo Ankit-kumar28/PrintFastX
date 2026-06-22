@@ -4,8 +4,9 @@ import toast from 'react-hot-toast';
 import { X, Scissors, Sun, Grid } from 'lucide-react';
 import DocumentEditor from './DocumentEditor';
 import PassportPhotoMaker from './PassportPhotoMaker';
+import IDCardEditor from './IDCardEditor';
 
-export default function PhotoStudio({ imageSource, onClose, onSave, mode = 'customer' }) {
+export default function PhotoStudio({ imageSource, onClose, onSave, mode = 'customer', batchFiles = [] }) {
   const [editorMode, setEditorMode] = useState('document'); // 'document' | 'passport'
   const [wizardStep, setWizardStep] = useState(1);
   const [originalImage, setOriginalImage] = useState(null);
@@ -61,14 +62,19 @@ export default function PhotoStudio({ imageSource, onClose, onSave, mode = 'cust
               >
                 <option value="document">Standard Document Editor</option>
                 <option value="passport">Passport Photo Maker</option>
+                <option value="idcard">ID Card Printer</option>
               </select>
             </div>
             <p style={S.subtitle}>
-              {editorMode === 'document' ? 'Edit, tune, and export your documents easily' : 'Professional-grade photo centering & matrix layout'}
+              {editorMode === 'document' 
+                ? 'Edit, tune, and export your documents easily' 
+                : editorMode === 'passport' 
+                  ? 'Professional-grade photo centering & matrix layout' 
+                  : 'Crop and format front/back ID cards for standard CR80 printing'}
             </p>
           </div>
 
-          {/* Stepper Steps UI (Only in Passport Mode) */}
+          {/* Stepper Steps UI (Only in Passport / ID Card Mode) */}
           {editorMode === 'passport' && (
             <div style={S.stepperContainer}>
               <div style={{ ...S.stepBubble, ...(wizardStep >= 1 ? S.stepActive : {}) }}>
@@ -81,6 +87,18 @@ export default function PhotoStudio({ imageSource, onClose, onSave, mode = 'cust
               <div style={S.stepLine}/>
               <div style={{ ...S.stepBubble, ...(wizardStep >= 3 ? S.stepActive : {}) }}>
                 <Grid size={14}/> <span>Matrix Layout</span>
+              </div>
+            </div>
+          )}
+
+          {editorMode === 'idcard' && (
+            <div style={S.stepperContainer}>
+              <div style={{ ...S.stepBubble, ...(wizardStep >= 1 ? S.stepActive : {}) }}>
+                <Scissors size={14}/> <span>Crop & Tune</span>
+              </div>
+              <div style={S.stepLine}/>
+              <div style={{ ...S.stepBubble, ...(wizardStep >= 2 ? S.stepActive : {}) }}>
+                <Grid size={14}/> <span>Layout Sheet</span>
               </div>
             </div>
           )}
@@ -108,7 +126,7 @@ export default function PhotoStudio({ imageSource, onClose, onSave, mode = 'cust
                 onSave={onSave}
                 mode={mode}
               />
-            ) : (
+            ) : editorMode === 'passport' ? (
               <PassportPhotoMaker
                 originalImage={originalImage}
                 imageLoaded={imageLoaded}
@@ -117,6 +135,17 @@ export default function PhotoStudio({ imageSource, onClose, onSave, mode = 'cust
                 mode={mode}
                 wizardStep={wizardStep}
                 setWizardStep={setWizardStep}
+              />
+            ) : (
+              <IDCardEditor
+                originalImage={originalImage}
+                imageLoaded={imageLoaded}
+                onClose={onClose}
+                onSave={onSave}
+                mode={mode}
+                wizardStep={wizardStep}
+                setWizardStep={setWizardStep}
+                batchFiles={batchFiles}
               />
             )
           )}
