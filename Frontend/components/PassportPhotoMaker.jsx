@@ -1,5 +1,4 @@
-// components/PassportPhotoMaker.jsx  ·  High-Fidelity Passport Photo Maker Studio v4
-// Redesigned as a modular passport wizard step component
+//Passport Photo Maker Studio v4
 // Screen 1: Crop, Adjust, & Dynamic Sizing (MediaPipe face-detection & Pan/Crop modes)
 // Screen 2: Tone Tuning & Advanced Backdrop Studio (Chroma-key, brush eraser, name/date identity strip)
 // Screen 3: Live Matrix Generation & Print Workspace (copies stepper, spacing, margins)
