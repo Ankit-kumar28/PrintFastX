@@ -321,6 +321,19 @@ export default function DocumentEditor({ originalImage, imageLoaded, onClose, on
   const editorCanvasRef = useRef(null);
   const cropDragRef = useRef({ active: false, handle: null, startX: 0, startY: 0, startPoints: null });
   const panDragRef = useRef({ active: false, startX: 0, startY: 0, startPanX: 0, startPanY: 0 });
+  const stateRef = useRef({
+    zoom: 100, rotation: 0, panX: 0, panY: 0,
+    p0: { x: 80, y: 80 }, p1: { x: CANVAS_W - 80, y: 80 },
+    p2: { x: CANVAS_W - 80, y: CANVAS_H - 80 }, p3: { x: 80, y: CANVAS_H - 80 },
+    brightness: 100, contrast: 100, saturation: 100,
+    originalImage: null, imageLoaded: false
+  });
+  const rafRef = useRef(null);
+
+  stateRef.current = {
+    zoom, rotation, panX, panY, p0, p1, p2, p3,
+    brightness, contrast, saturation, originalImage, imageLoaded
+  };
 
   // ── Helper Math Functions ──────────────────────────────────────────────────
   const calcFitDims = (img, cW, cH) => {
@@ -359,6 +372,10 @@ export default function DocumentEditor({ originalImage, imageLoaded, onClose, on
   // ── Canvas Rendering pipeline ──────────────────────────────────────────────
   const drawEditor = useCallback(() => {
     const canvas = editorCanvasRef.current;
+    const {
+      originalImage, imageLoaded, zoom, rotation, panX, panY,
+      p0, p1, p2, p3, brightness, contrast, saturation
+    } = stateRef.current;
     if (!canvas || !originalImage || !imageLoaded) return;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const w = canvas.width, h = canvas.height;
@@ -489,12 +506,14 @@ export default function DocumentEditor({ originalImage, imageLoaded, onClose, on
     drawPerspectiveHandle(p3);
 
     ctx.restore();
-  }, [originalImage, imageLoaded, zoom, rotation, panX, panY, p0, p1, p2, p3, brightness, contrast, saturation]);
+  }, []);
 
   // Update canvas on parameter updates
   useEffect(() => {
-    drawEditor();
-  }, [drawEditor]);
+    if (!cropDragRef.current.active && !panDragRef.current.active) {
+      drawEditor();
+    }
+  }, [drawEditor, zoom, rotation, panX, panY, p0, p1, p2, p3, brightness, contrast, saturation, originalImage, imageLoaded]);
 
   // Auto Perspective Crop on Image Load
   useEffect(() => {
@@ -529,9 +548,9 @@ export default function DocumentEditor({ originalImage, imageLoaded, onClose, on
   const handleStartDrag = (e) => {
     const { x, y } = getCanvasXY(e);
 
-    // Check if dragging any of the 4 corners
     const dist = (pt1, pt2) => Math.sqrt((pt1.x - pt2.x) ** 2 + (pt1.y - pt2.y) ** 2);
     const hs = 45; // hit area
+    const { p0, p1, p2, p3 } = stateRef.current;
     const pts = [p0, p1, p2, p3];
 
     let selectedIdx = -1;
@@ -555,100 +574,148 @@ export default function DocumentEditor({ originalImage, imageLoaded, onClose, on
         active: true,
         startX: e.touches ? e.touches[0].clientX : e.clientX,
         startY: e.touches ? e.touches[0].clientY : e.clientY,
-        startPanX: panX,
-        startPanY: panY
+        startPanX: stateRef.current.panX,
+        startPanY: stateRef.current.panY
       };
     }
   };
 
-  const handleDrag = (e) => {
-    const { x, y } = getCanvasXY(e);
+  useEffect(() => {
+    const handleWindowMove = (e) => {
+      if (!cropDragRef.current.active && !panDragRef.current.active) return;
+      if (e.cancelable && e.type !== 'mousemove') e.preventDefault?.();
 
-    // Styling cursors
-    if (!cropDragRef.current.active && !panDragRef.current.active && editorCanvasRef.current) {
-      const dist = (pt1, pt2) => Math.sqrt((pt1.x - pt2.x) ** 2 + (pt1.y - pt2.y) ** 2);
-      const hs = 45;
-      const pts = [p0, p1, p2, p3];
-      let onCorner = false;
-      for (let i = 0; i < 4; i++) {
-        if (dist({ x, y }, pts[i]) < hs) {
-          onCorner = true;
-          break;
-        }
-      }
-      editorCanvasRef.current.style.cursor = onCorner ? 'crosshair' : 'grab';
-    } else if (panDragRef.current.active && editorCanvasRef.current) {
-      editorCanvasRef.current.style.cursor = 'grabbing';
-    }
+      const rect = editorCanvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
 
-    if (panDragRef.current.active) {
       const cx = e.touches ? e.touches[0].clientX : e.clientX;
       const cy = e.touches ? e.touches[0].clientY : e.clientY;
-      const dx = cx - panDragRef.current.startX;
-      const dy = cy - panDragRef.current.startY;
-      setPanX(panDragRef.current.startPanX + dx);
-      setPanY(panDragRef.current.startPanY + dy);
-      return;
-    }
 
-    if (cropDragRef.current.active) {
-      const { handle, startX, startY, startPoints } = cropDragRef.current;
-      const dx = x - startX;
-      const dy = y - startY;
-
-      const idx = parseInt(handle.substring(1));
-      let rawX = startPoints[idx].x + dx;
-      let rawY = startPoints[idx].y + dy;
-
-      if (originalImage) {
-        const { drawW, drawH } = calcFitDims(originalImage, CANVAS_W, CANVAS_H);
-        const scaleVal = zoom / 100;
-        const dW = drawW * scaleVal;
-        const dH = drawH * scaleVal;
-
-        const cx = CANVAS_W / 2;
-        const cy = CANVAS_H / 2;
-
-        let tx = rawX - (cx + panX);
-        let ty = rawY - (cy + panY);
-        
-        const angle = -(rotation * Math.PI) / 180;
-        const cosA = Math.cos(angle);
-        const sinA = Math.sin(angle);
-        let lx = tx * cosA - ty * sinA;
-        let ly = tx * sinA + ty * cosA;
-
-        lx = Math.max(-dW / 2, Math.min(dW / 2, lx));
-        ly = Math.max(-dH / 2, Math.min(dH / 2, ly));
-
-        const angleFwd = (rotation * Math.PI) / 180;
-        const cosFwd = Math.cos(angleFwd);
-        const sinFwd = Math.sin(angleFwd);
-        let ftx = lx * cosFwd - ly * sinFwd;
-        let fty = lx * sinFwd + ly * cosFwd;
-
-        rawX = ftx + cx + panX;
-        rawY = fty + cy + panY;
+      if (panDragRef.current.active) {
+        const dx = cx - panDragRef.current.startX;
+        const dy = cy - panDragRef.current.startY;
+        const newPanX = panDragRef.current.startPanX + dx;
+        const newPanY = panDragRef.current.startPanY + dy;
+        stateRef.current.panX = newPanX;
+        stateRef.current.panY = newPanY;
+        setPanX(newPanX);
+        setPanY(newPanY);
+        if (!rafRef.current) {
+          rafRef.current = requestAnimationFrame(() => {
+            rafRef.current = null;
+            drawEditor();
+          });
+        }
+        return;
       }
 
-      const targetPt = {
-        x: Math.round(Math.max(0, Math.min(CANVAS_W, rawX))),
-        y: Math.round(Math.max(0, Math.min(CANVAS_H, rawY)))
-      };
+      if (cropDragRef.current.active) {
+        const x = Math.round(((cx - rect.left) / rect.width) * CANVAS_W);
+        const y = Math.round(((cy - rect.top) / rect.height) * CANVAS_H);
 
-      const updatedPoints = [...startPoints];
-      updatedPoints[idx] = targetPt;
+        const { handle, startX, startY, startPoints } = cropDragRef.current;
+        const dx = x - startX;
+        const dy = y - startY;
 
-      if (idx === 0) setP0(updatedPoints[0]);
-      else if (idx === 1) setP1(updatedPoints[1]);
-      else if (idx === 2) setP2(updatedPoints[2]);
-      else if (idx === 3) setP3(updatedPoints[3]);
+        const idx = parseInt(handle.substring(1));
+        let rawX = startPoints[idx].x + dx;
+        let rawY = startPoints[idx].y + dy;
+
+        const { originalImage, zoom, rotation, panX, panY } = stateRef.current;
+        if (originalImage) {
+          const { drawW, drawH } = calcFitDims(originalImage, CANVAS_W, CANVAS_H);
+          const scaleVal = zoom / 100;
+          const dW = drawW * scaleVal;
+          const dH = drawH * scaleVal;
+
+          const centerW = CANVAS_W / 2;
+          const centerH = CANVAS_H / 2;
+
+          let tx = rawX - (centerW + panX);
+          let ty = rawY - (centerH + panY);
+
+          const angle = -(rotation * Math.PI) / 180;
+          const cosA = Math.cos(angle);
+          const sinA = Math.sin(angle);
+          let lx = tx * cosA - ty * sinA;
+          let ly = tx * sinA + ty * cosA;
+
+          lx = Math.max(-dW / 2, Math.min(dW / 2, lx));
+          ly = Math.max(-dH / 2, Math.min(dH / 2, ly));
+
+          const angleFwd = (rotation * Math.PI) / 180;
+          const cosFwd = Math.cos(angleFwd);
+          const sinFwd = Math.sin(angleFwd);
+          let ftx = lx * cosFwd - ly * sinFwd;
+          let fty = lx * sinFwd + ly * cosFwd;
+
+          rawX = ftx + centerW + panX;
+          rawY = fty + centerH + panY;
+        }
+
+        const targetPt = {
+          x: Math.round(Math.max(0, Math.min(CANVAS_W, rawX))),
+          y: Math.round(Math.max(0, Math.min(CANVAS_H, rawY)))
+        };
+
+        const updatedPoints = [...startPoints];
+        updatedPoints[idx] = targetPt;
+
+        stateRef.current.p0 = updatedPoints[0];
+        stateRef.current.p1 = updatedPoints[1];
+        stateRef.current.p2 = updatedPoints[2];
+        stateRef.current.p3 = updatedPoints[3];
+
+        if (idx === 0) setP0(targetPt);
+        else if (idx === 1) setP1(targetPt);
+        else if (idx === 2) setP2(targetPt);
+        else if (idx === 3) setP3(targetPt);
+
+        if (!rafRef.current) {
+          rafRef.current = requestAnimationFrame(() => {
+            rafRef.current = null;
+            drawEditor();
+          });
+        }
+      }
+    };
+
+    const handleWindowUp = () => {
+      if (cropDragRef.current.active || panDragRef.current.active) {
+        cropDragRef.current.active = false;
+        panDragRef.current.active = false;
+        if (editorCanvasRef.current) editorCanvasRef.current.style.cursor = 'grab';
+      }
+    };
+
+    window.addEventListener('mousemove', handleWindowMove);
+    window.addEventListener('mouseup', handleWindowUp);
+    window.addEventListener('touchmove', handleWindowMove, { passive: false });
+    window.addEventListener('touchend', handleWindowUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMove);
+      window.removeEventListener('mouseup', handleWindowUp);
+      window.removeEventListener('touchmove', handleWindowMove);
+      window.removeEventListener('touchend', handleWindowUp);
+    };
+  }, [drawEditor]);
+
+  const handleCanvasHover = (e) => {
+    if (cropDragRef.current.active || panDragRef.current.active || !editorCanvasRef.current) return;
+    const { x, y } = getCanvasXY(e);
+    const dist = (pt1, pt2) => Math.sqrt((pt1.x - pt2.x) ** 2 + (pt1.y - pt2.y) ** 2);
+    const hs = 45;
+    const { p0, p1, p2, p3 } = stateRef.current;
+    const pts = [p0, p1, p2, p3];
+    let onCorner = false;
+    for (let i = 0; i < 4; i++) {
+      if (dist({ x, y }, pts[i]) < hs) {
+        onCorner = true;
+        break;
+      }
     }
-  };
-
-  const handleStopDrag = () => {
-    cropDragRef.current.active = false;
-    panDragRef.current.active = false;
+    editorCanvasRef.current.style.cursor = onCorner ? 'crosshair' : 'grab';
   };
 
   const resetTransforms = () => {
@@ -835,12 +902,8 @@ export default function DocumentEditor({ originalImage, imageLoaded, onClose, on
             width={CANVAS_W}
             height={CANVAS_H}
             onMouseDown={handleStartDrag}
-            onMouseMove={handleDrag}
-            onMouseUp={handleStopDrag}
-            onMouseLeave={handleStopDrag}
+            onMouseMove={handleCanvasHover}
             onTouchStart={handleStartDrag}
-            onTouchMove={handleDrag}
-            onTouchEnd={handleStopDrag}
             style={{
               ...S.fullCanvas,
               cursor: dragMode === 'pan' ? 'grab' : 'crosshair'

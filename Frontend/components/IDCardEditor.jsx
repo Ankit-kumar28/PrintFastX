@@ -418,6 +418,16 @@ export default function IDCardEditor({
   // Dragging refs
   const cropDragRef = useRef({ active: false, handle: null, startX: 0, startY: 0, startPoints: null });
   const panDragRef = useRef({ active: false, startX: 0, startY: 0, startPanX: 0, startPanY: 0 });
+  const stateRef = useRef({
+    wizardStep, currentCropTarget, frontConfig, backConfig,
+    frontOriginalImage, backOriginalImage, originalImage, imageLoaded
+  });
+  const rafRef = useRef(null);
+
+  stateRef.current = {
+    wizardStep, currentCropTarget, frontConfig, backConfig,
+    frontOriginalImage, backOriginalImage, originalImage, imageLoaded
+  };
 
   // ── Sheet styling options ──────────────────────────────────────────────────
   const [roundedCorners, setRoundedCorners] = useState(true);
@@ -497,162 +507,15 @@ export default function IDCardEditor({
     setBackOriginalImage(null);
   }, [originalImage]);
 
-  // ── Drag & Hover event listeners ───────────────────────────────────────────
-  const getCanvasXY = (e) => {
-    const rect = editorCanvasRef.current.getBoundingClientRect();
-    const cx = e.touches ? e.touches[0].clientX : e.clientX;
-    const cy = e.touches ? e.touches[0].clientY : e.clientY;
-    return {
-      x: Math.round(((cx - rect.left) / rect.width) * CANVAS_W),
-      y: Math.round(((cy - rect.top) / rect.height) * CANVAS_H),
-    };
-  };
-
-  const handleStartDrag = (e) => {
-    if (wizardStep !== 1) return;
-    const { x, y } = getCanvasXY(e);
-    
-    // Check if dragging any of the 4 corners
-    const dist = (pt1, pt2) => Math.sqrt((pt1.x - pt2.x) ** 2 + (pt1.y - pt2.y) ** 2);
-    const hs = 45; // hit area
-    const pts = [activeConfig.p0, activeConfig.p1, activeConfig.p2, activeConfig.p3];
-    
-    let selectedIdx = -1;
-    for (let i = 0; i < 4; i++) {
-      if (dist({ x, y }, pts[i]) < hs) {
-        selectedIdx = i;
-        break;
-      }
-    }
-
-    if (selectedIdx !== -1) {
-      cropDragRef.current = {
-        active: true,
-        handle: `p${selectedIdx}`,
-        startX: x,
-        startY: y,
-        startPoints: pts.map(p => ({ ...p }))
-      };
-    } else {
-      panDragRef.current = {
-        active: true,
-        startX: e.touches ? e.touches[0].clientX : e.clientX,
-        startY: e.touches ? e.touches[0].clientY : e.clientY,
-        startPanX: activeConfig.panX,
-        startPanY: activeConfig.panY
-      };
-    }
-  };
-
-  const handleDrag = (e) => {
-    if (wizardStep !== 1) return;
-    const { x, y } = getCanvasXY(e);
-
-    const updateConfig = (updater) => {
-      if (currentCropTarget === 'front') {
-        setFrontConfig(prev => updater(prev));
-      } else {
-        setBackConfig(prev => updater(prev));
-      }
-    };
-
-    // Styling cursors
-    if (!cropDragRef.current.active && !panDragRef.current.active && editorCanvasRef.current) {
-      const dist = (pt1, pt2) => Math.sqrt((pt1.x - pt2.x) ** 2 + (pt1.y - pt2.y) ** 2);
-      const hs = 45;
-      const pts = [activeConfig.p0, activeConfig.p1, activeConfig.p2, activeConfig.p3];
-      let onCorner = false;
-      for (let i = 0; i < 4; i++) {
-        if (dist({ x, y }, pts[i]) < hs) {
-          onCorner = true;
-          break;
-        }
-      }
-      editorCanvasRef.current.style.cursor = onCorner ? 'crosshair' : 'grab';
-    } else if (panDragRef.current.active && editorCanvasRef.current) {
-      editorCanvasRef.current.style.cursor = 'grabbing';
-    }
-
-    if (panDragRef.current.active) {
-      const cx = e.touches ? e.touches[0].clientX : e.clientX;
-      const cy = e.touches ? e.touches[0].clientY : e.clientY;
-      const dx = cx - panDragRef.current.startX;
-      const dy = cy - panDragRef.current.startY;
-      updateConfig(prev => ({
-        ...prev,
-        panX: panDragRef.current.startPanX + dx,
-        panY: panDragRef.current.startPanY + dy
-      }));
-      return;
-    }
-
-    if (cropDragRef.current.active) {
-      const { handle, startX, startY, startPoints } = cropDragRef.current;
-      const dx = x - startX;
-      const dy = y - startY;
-
-      const idx = parseInt(handle.substring(1));
-      let rawX = startPoints[idx].x + dx;
-      let rawY = startPoints[idx].y + dy;
-
-      const img = currentCropTarget === 'front' ? (frontOriginalImage || originalImage) : (backOriginalImage || originalImage);
-      if (img) {
-        const { drawW, drawH } = calcFitDims(img, CANVAS_W, CANVAS_H);
-        const scaleVal = activeConfig.zoom / 100;
-        const dW = drawW * scaleVal;
-        const dH = drawH * scaleVal;
-
-        const cx = CANVAS_W / 2;
-        const cy = CANVAS_H / 2;
-
-        let tx = rawX - (cx + activeConfig.panX);
-        let ty = rawY - (cy + activeConfig.panY);
-        
-        const angle = -(activeConfig.rotation * Math.PI) / 180;
-        const cosA = Math.cos(angle);
-        const sinA = Math.sin(angle);
-        let lx = tx * cosA - ty * sinA;
-        let ly = tx * sinA + ty * cosA;
-
-        lx = Math.max(-dW / 2, Math.min(dW / 2, lx));
-        ly = Math.max(-dH / 2, Math.min(dH / 2, ly));
-
-        const angleFwd = (activeConfig.rotation * Math.PI) / 180;
-        const cosFwd = Math.cos(angleFwd);
-        const sinFwd = Math.sin(angleFwd);
-        let ftx = lx * cosFwd - ly * sinFwd;
-        let fty = lx * sinFwd + ly * cosFwd;
-
-        rawX = ftx + cx + activeConfig.panX;
-        rawY = fty + cy + activeConfig.panY;
-      }
-
-      const targetPt = {
-        x: Math.round(Math.max(0, Math.min(CANVAS_W, rawX))),
-        y: Math.round(Math.max(0, Math.min(CANVAS_H, rawY)))
-      };
-
-      const updatedPoints = [...startPoints];
-      updatedPoints[idx] = targetPt;
-
-      updateConfig(prev => ({
-        ...prev,
-        p0: updatedPoints[0],
-        p1: updatedPoints[1],
-        p2: updatedPoints[2],
-        p3: updatedPoints[3]
-      }));
-    }
-  };
-
-  const handleStopDrag = () => {
-    cropDragRef.current.active = false;
-    panDragRef.current.active = false;
-  };
-
   // ── Canvas Rendering Pipeline ──────────────────────────────────────────────
   const drawEditor = useCallback(() => {
     const canvas = editorCanvasRef.current;
+    const {
+      wizardStep, currentCropTarget, frontConfig, backConfig,
+      frontOriginalImage, backOriginalImage, originalImage, imageLoaded
+    } = stateRef.current;
+    const activeConfig = currentCropTarget === 'front' ? frontConfig : backConfig;
+    const activeImage = currentCropTarget === 'front' ? (frontOriginalImage || originalImage) : (backOriginalImage || originalImage);
     if (!canvas || !activeImage || !imageLoaded) return;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const w = canvas.width, h = canvas.height;
@@ -789,13 +652,210 @@ export default function IDCardEditor({
     drawPerspectiveHandle(p3);
 
     ctx.restore();
-  }, [wizardStep, currentCropTarget, imageLoaded, activeImage, activeConfig]);
+  }, []);
 
   useEffect(() => {
-    if (wizardStep === 1) {
+    if (wizardStep === 1 && !cropDragRef.current.active && !panDragRef.current.active) {
       drawEditor();
     }
-  }, [wizardStep, drawEditor]);
+  }, [wizardStep, drawEditor, currentCropTarget, frontConfig, backConfig, frontOriginalImage, backOriginalImage, originalImage, imageLoaded]);
+
+  // ── Drag & Hover event listeners ───────────────────────────────────────────
+  const getCanvasXY = (e) => {
+    const rect = editorCanvasRef.current.getBoundingClientRect();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: Math.round(((cx - rect.left) / rect.width) * CANVAS_W),
+      y: Math.round(((cy - rect.top) / rect.height) * CANVAS_H),
+    };
+  };
+
+  const handleStartDrag = (e) => {
+    if (wizardStep !== 1) return;
+    const { x, y } = getCanvasXY(e);
+    
+    const dist = (pt1, pt2) => Math.sqrt((pt1.x - pt2.x) ** 2 + (pt1.y - pt2.y) ** 2);
+    const hs = 45; // hit area
+    const activeCfg = currentCropTarget === 'front' ? stateRef.current.frontConfig : stateRef.current.backConfig;
+    const pts = [activeCfg.p0, activeCfg.p1, activeCfg.p2, activeCfg.p3];
+    
+    let selectedIdx = -1;
+    for (let i = 0; i < 4; i++) {
+      if (dist({ x, y }, pts[i]) < hs) {
+        selectedIdx = i;
+        break;
+      }
+    }
+
+    if (selectedIdx !== -1) {
+      cropDragRef.current = {
+        active: true,
+        handle: `p${selectedIdx}`,
+        startX: x,
+        startY: y,
+        startPoints: pts.map(p => ({ ...p }))
+      };
+    } else {
+      panDragRef.current = {
+        active: true,
+        startX: e.touches ? e.touches[0].clientX : e.clientX,
+        startY: e.touches ? e.touches[0].clientY : e.clientY,
+        startPanX: activeCfg.panX,
+        startPanY: activeCfg.panY
+      };
+    }
+  };
+
+  useEffect(() => {
+    const handleWindowMove = (e) => {
+      if (!cropDragRef.current.active && !panDragRef.current.active) return;
+      if (e.cancelable && e.type !== 'mousemove') e.preventDefault?.();
+
+      const rect = editorCanvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const cx = e.touches ? e.touches[0].clientX : e.clientX;
+      const cy = e.touches ? e.touches[0].clientY : e.clientY;
+
+      const { currentCropTarget, frontConfig, backConfig } = stateRef.current;
+      const activeCfg = currentCropTarget === 'front' ? frontConfig : backConfig;
+      const updateCfg = (updater) => {
+        if (currentCropTarget === 'front') setFrontConfig(prev => updater(prev));
+        else setBackConfig(prev => updater(prev));
+      };
+
+      if (panDragRef.current.active) {
+        const dx = cx - panDragRef.current.startX;
+        const dy = cy - panDragRef.current.startY;
+        const newPanX = panDragRef.current.startPanX + dx;
+        const newPanY = panDragRef.current.startPanY + dy;
+        activeCfg.panX = newPanX;
+        activeCfg.panY = newPanY;
+        updateCfg(prev => ({ ...prev, panX: newPanX, panY: newPanY }));
+        if (!rafRef.current) {
+          rafRef.current = requestAnimationFrame(() => {
+            rafRef.current = null;
+            drawEditor();
+          });
+        }
+        return;
+      }
+
+      if (cropDragRef.current.active) {
+        const x = Math.round(((cx - rect.left) / rect.width) * CANVAS_W);
+        const y = Math.round(((cy - rect.top) / rect.height) * CANVAS_H);
+
+        const { handle, startX, startY, startPoints } = cropDragRef.current;
+        const dx = x - startX;
+        const dy = y - startY;
+
+        const idx = parseInt(handle.substring(1));
+        let rawX = startPoints[idx].x + dx;
+        let rawY = startPoints[idx].y + dy;
+
+        const { frontOriginalImage, backOriginalImage, originalImage } = stateRef.current;
+        const img = currentCropTarget === 'front' ? (frontOriginalImage || originalImage) : (backOriginalImage || originalImage);
+        if (img) {
+          const { drawW, drawH } = calcFitDims(img, CANVAS_W, CANVAS_H);
+          const scaleVal = activeCfg.zoom / 100;
+          const dW = drawW * scaleVal;
+          const dH = drawH * scaleVal;
+
+          const centerW = CANVAS_W / 2;
+          const centerH = CANVAS_H / 2;
+
+          let tx = rawX - (centerW + activeCfg.panX);
+          let ty = rawY - (centerH + activeCfg.panY);
+
+          const angle = -(activeCfg.rotation * Math.PI) / 180;
+          const cosA = Math.cos(angle);
+          const sinA = Math.sin(angle);
+          let lx = tx * cosA - ty * sinA;
+          let ly = tx * sinA + ty * cosA;
+
+          lx = Math.max(-dW / 2, Math.min(dW / 2, lx));
+          ly = Math.max(-dH / 2, Math.min(dH / 2, ly));
+
+          const angleFwd = (activeCfg.rotation * Math.PI) / 180;
+          const cosFwd = Math.cos(angleFwd);
+          const sinFwd = Math.sin(angleFwd);
+          let ftx = lx * cosFwd - ly * sinFwd;
+          let fty = lx * sinFwd + ly * cosFwd;
+
+          rawX = ftx + centerW + activeCfg.panX;
+          rawY = fty + centerH + activeCfg.panY;
+        }
+
+        const targetPt = {
+          x: Math.round(Math.max(0, Math.min(CANVAS_W, rawX))),
+          y: Math.round(Math.max(0, Math.min(CANVAS_H, rawY)))
+        };
+
+        const updatedPoints = [...startPoints];
+        updatedPoints[idx] = targetPt;
+
+        activeCfg.p0 = updatedPoints[0];
+        activeCfg.p1 = updatedPoints[1];
+        activeCfg.p2 = updatedPoints[2];
+        activeCfg.p3 = updatedPoints[3];
+
+        updateCfg(prev => ({
+          ...prev,
+          p0: updatedPoints[0],
+          p1: updatedPoints[1],
+          p2: updatedPoints[2],
+          p3: updatedPoints[3]
+        }));
+
+        if (!rafRef.current) {
+          rafRef.current = requestAnimationFrame(() => {
+            rafRef.current = null;
+            drawEditor();
+          });
+        }
+      }
+    };
+
+    const handleWindowUp = () => {
+      if (cropDragRef.current.active || panDragRef.current.active) {
+        cropDragRef.current.active = false;
+        panDragRef.current.active = false;
+        if (editorCanvasRef.current) editorCanvasRef.current.style.cursor = 'grab';
+      }
+    };
+
+    window.addEventListener('mousemove', handleWindowMove);
+    window.addEventListener('mouseup', handleWindowUp);
+    window.addEventListener('touchmove', handleWindowMove, { passive: false });
+    window.addEventListener('touchend', handleWindowUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMove);
+      window.removeEventListener('mouseup', handleWindowUp);
+      window.removeEventListener('touchmove', handleWindowMove);
+      window.removeEventListener('touchend', handleWindowUp);
+    };
+  }, [drawEditor]);
+
+  const handleCanvasHover = (e) => {
+    if (wizardStep !== 1 || cropDragRef.current.active || panDragRef.current.active || !editorCanvasRef.current) return;
+    const { x, y } = getCanvasXY(e);
+    const dist = (pt1, pt2) => Math.sqrt((pt1.x - pt2.x) ** 2 + (pt1.y - pt2.y) ** 2);
+    const hs = 45;
+    const activeCfg = currentCropTarget === 'front' ? stateRef.current.frontConfig : stateRef.current.backConfig;
+    const pts = [activeCfg.p0, activeCfg.p1, activeCfg.p2, activeCfg.p3];
+    let onCorner = false;
+    for (let i = 0; i < 4; i++) {
+      if (dist({ x, y }, pts[i]) < hs) {
+        onCorner = true;
+        break;
+      }
+    }
+    editorCanvasRef.current.style.cursor = onCorner ? 'crosshair' : 'grab';
+  };
+
+
 
   // ── Projective Warp Perspective Crop ────────────────────────────────────────
   const executeCrop = (img, config) => {
@@ -1228,12 +1288,8 @@ export default function IDCardEditor({
                 width={CANVAS_W}
                 height={CANVAS_H}
                 onMouseDown={handleStartDrag}
-                onMouseMove={handleDrag}
-                onMouseUp={handleStopDrag}
-                onMouseLeave={handleStopDrag}
+                onMouseMove={handleCanvasHover}
                 onTouchStart={handleStartDrag}
-                onTouchMove={handleDrag}
-                onTouchEnd={handleStopDrag}
                 style={S.fullCanvas}
               />
             </div>

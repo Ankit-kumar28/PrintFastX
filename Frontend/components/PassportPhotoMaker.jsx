@@ -106,6 +106,14 @@ export default function PassportPhotoMaker({
   // Dragging states for Crop / Pan
   const cropDragRef = useRef({ active: false, handle: null, startX: 0, startY: 0, startRect: null });
   const panDragRef = useRef({ active: false, startX: 0, startY: 0, startPanX: 0, startPanY: 0 });
+  const stateRef = useRef({
+    panX: 0, panY: 0, cropRect: { x: 225, y: 150, w: 900, h: 1155 }
+  });
+  const rafRef = useRef(null);
+
+  stateRef.current = {
+    panX, panY, cropRect
+  };
 
   // ── Screen 2 States (Tone & Backdrop Studio) ──────────────────────────────
   const [sharpness, setSharpness] = useState(0); // 0 to 100
@@ -414,10 +422,14 @@ export default function PassportPhotoMaker({
 
     if (wizardStep === 1) {
       // ── SCREEN 1: Crop layout ──
+      const curPanX = stateRef.current?.panX ?? panX;
+      const curPanY = stateRef.current?.panY ?? panY;
+      const curCropRect = stateRef.current?.cropRect ?? cropRect;
+
       drawCheckerboard(ctx, w, h);
 
       ctx.save();
-      ctx.translate(w / 2 + panX, h / 2 + panY);
+      ctx.translate(w / 2 + curPanX, h / 2 + curPanY);
       ctx.rotate((rotation * Math.PI) / 180);
 
       const { drawW, drawH } = calcFitDims(originalImage, w, h);
@@ -429,38 +441,38 @@ export default function PassportPhotoMaker({
       ctx.restore();
 
       // Render Crop overlay bounding boxes
-      if (cropRect) {
+      if (curCropRect) {
         ctx.save();
         ctx.fillStyle = 'rgba(15, 23, 42, 0.6)'; // Translucent overlay outside crop rect
-        ctx.fillRect(0, 0, w, cropRect.y);
-        ctx.fillRect(0, cropRect.y + cropRect.h, w, h - cropRect.y - cropRect.h);
-        ctx.fillRect(0, cropRect.y, cropRect.x, cropRect.h);
-        ctx.fillRect(cropRect.x + cropRect.w, cropRect.y, w - cropRect.x - cropRect.w, cropRect.h);
+        ctx.fillRect(0, 0, w, curCropRect.y);
+        ctx.fillRect(0, curCropRect.y + curCropRect.h, w, h - curCropRect.y - curCropRect.h);
+        ctx.fillRect(0, curCropRect.y, curCropRect.x, curCropRect.h);
+        ctx.fillRect(curCropRect.x + curCropRect.w, curCropRect.y, w - curCropRect.x - curCropRect.w, curCropRect.h);
 
         // Crop bounds outline
         ctx.strokeStyle = '#6366f1';
         ctx.lineWidth = 7.5;
-        ctx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+        ctx.strokeRect(curCropRect.x, curCropRect.y, curCropRect.w, curCropRect.h);
 
         // Crop Rule-of-Thirds Grid
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
         ctx.lineWidth = 3;
         for (let t = 1; t <= 2; t++) {
           ctx.beginPath();
-          ctx.moveTo(cropRect.x + (cropRect.w * t) / 3, cropRect.y);
-          ctx.lineTo(cropRect.x + (cropRect.w * t) / 3, cropRect.y + cropRect.h);
+          ctx.moveTo(curCropRect.x + (curCropRect.w * t) / 3, curCropRect.y);
+          ctx.lineTo(curCropRect.x + (curCropRect.w * t) / 3, curCropRect.y + curCropRect.h);
           ctx.stroke();
 
           ctx.beginPath();
-          ctx.moveTo(cropRect.x, cropRect.y + (cropRect.h * t) / 3);
-          ctx.lineTo(cropRect.x + cropRect.w, cropRect.y + (cropRect.h * t) / 3);
+          ctx.moveTo(curCropRect.x, curCropRect.y + (curCropRect.h * t) / 3);
+          ctx.lineTo(curCropRect.x + curCropRect.w, curCropRect.y + (curCropRect.h * t) / 3);
           ctx.stroke();
         }
 
         // Draw modern L-shaped corner handles and edge bars with white backing
         const thick = 10;
         const len = 40;
-        const { x: cx, y: cy, w: cw, h: ch } = cropRect;
+        const { x: cx, y: cy, w: cw, h: ch } = curCropRect;
 
         const drawCropHandle = (hx, hy, hw, hh) => {
           ctx.fillStyle = '#ffffff';
@@ -853,9 +865,10 @@ export default function PassportPhotoMaker({
   };
 
   const getHandleAt = (x, y) => {
-    if (!cropRect) return null;
+    const activeRect = stateRef.current?.cropRect ?? cropRect;
+    if (!activeRect) return null;
     const hs = 15;
-    const { x: cx, y: cy, w: cw, h: ch } = cropRect;
+    const { x: cx, y: cy, w: cw, h: ch } = activeRect;
     const inRect = (px, py, rx, ry, rw, rh) => px >= rx && px <= rx + rw && py >= ry && py <= ry + rh;
 
     if (inRect(x, y, cx - hs, cy - hs, hs * 2, hs * 2)) return 'tl';
@@ -901,108 +914,156 @@ export default function PassportPhotoMaker({
       const handle = getHandleAt(x, y);
 
       if (handle) {
-        cropDragRef.current = { active: true, handle, startX: x, startY: y, startRect: { ...cropRect } };
+        cropDragRef.current = { active: true, handle, startX: x, startY: y, startRect: { ...(stateRef.current?.cropRect ?? cropRect) } };
       } else {
         panDragRef.current = {
           active: true,
           startX: e.touches ? e.touches[0].clientX : e.clientX,
           startY: e.touches ? e.touches[0].clientY : e.clientY,
-          startPanX: panX,
-          startPanY: panY
+          startPanX: stateRef.current?.panX ?? panX,
+          startPanY: stateRef.current?.panY ?? panY
         };
       }
     }
   };
 
-  const handleDrag = (e) => {
-    if (wizardStep === 2 && isBrushing.current) {
-      const { x, y } = getCanvasXY(e);
-      const ctx = maskCanvasRef.current.getContext('2d');
-      ctx.lineTo(x, y);
-      ctx.stroke();
-      drawEditor();
-      return;
-    }
-
-    if (wizardStep === 1) {
-      const { x, y } = getCanvasXY(e);
-
-      // Mouse Hover styling
-      if (!cropDragRef.current.active && !panDragRef.current.active && editorCanvasRef.current) {
-        const handle = getHandleAt(x, y);
-        if (handle === 'move') {
-          editorCanvasRef.current.style.cursor = 'move';
-        } else if (handle === 'tl' || handle === 'br') {
-          editorCanvasRef.current.style.cursor = 'nwse-resize';
-        } else if (handle === 'tr' || handle === 'bl') {
-          editorCanvasRef.current.style.cursor = 'nesw-resize';
-        } else if (handle === 't' || handle === 'b') {
-          editorCanvasRef.current.style.cursor = 'ns-resize';
-        } else if (handle === 'l' || handle === 'r') {
-          editorCanvasRef.current.style.cursor = 'ew-resize';
-        } else {
-          editorCanvasRef.current.style.cursor = 'grab';
-        }
-      } else if (panDragRef.current.active && editorCanvasRef.current) {
-        editorCanvasRef.current.style.cursor = 'grabbing';
-      } else if (cropDragRef.current.active && editorCanvasRef.current) {
-        const h = cropDragRef.current.handle;
-        if (h === 'move') editorCanvasRef.current.style.cursor = 'move';
-        else if (h === 'tl' || h === 'br') editorCanvasRef.current.style.cursor = 'nwse-resize';
-        else if (h === 'tr' || h === 'bl') editorCanvasRef.current.style.cursor = 'nesw-resize';
-        else if (h === 't' || h === 'b') editorCanvasRef.current.style.cursor = 'ns-resize';
-        else if (h === 'l' || h === 'r') editorCanvasRef.current.style.cursor = 'ew-resize';
-      }
-
-      if (panDragRef.current.active) {
+  useEffect(() => {
+    const handleWindowMove = (e) => {
+      if (wizardStep === 2 && isBrushing.current) {
+        if (e.cancelable && e.type !== 'mousemove') e.preventDefault?.();
+        const rect = editorCanvasRef.current?.getBoundingClientRect();
+        if (!rect || !maskCanvasRef.current) return;
         const cx = e.touches ? e.touches[0].clientX : e.clientX;
         const cy = e.touches ? e.touches[0].clientY : e.clientY;
-        const dx = cx - panDragRef.current.startX;
-        const dy = cy - panDragRef.current.startY;
-        setPanX(panDragRef.current.startPanX + dx);
-        setPanY(panDragRef.current.startPanY + dy);
+        const x = Math.round(((cx - rect.left) / rect.width) * CANVAS_W);
+        const y = Math.round(((cy - rect.top) / rect.height) * CANVAS_H);
+        const ctx = maskCanvasRef.current.getContext('2d');
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        if (!rafRef.current) {
+          rafRef.current = requestAnimationFrame(() => {
+            rafRef.current = null;
+            drawEditor();
+          });
+        }
         return;
       }
 
-      if (cropDragRef.current.active) {
-        const { handle, startX, startY, startRect } = cropDragRef.current;
-        const dx = x - startX;
-        const dy = y - startY;
+      if (wizardStep === 1 && (cropDragRef.current.active || panDragRef.current.active)) {
+        if (e.cancelable && e.type !== 'mousemove') e.preventDefault?.();
+        const rect = editorCanvasRef.current?.getBoundingClientRect();
+        if (!rect) return;
 
-        let nx = startRect.x;
-        let ny = startRect.y;
-        let nw = startRect.w;
-        let nh = startRect.h;
-        const ratio = startRect.w / startRect.h;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
-        if (handle === 'move') {
-          nx = Math.max(0, Math.min(CANVAS_W - nw, nx + dx));
-          ny = Math.max(0, Math.min(CANVAS_H - nh, ny + dy));
-        } else {
-          if (handle.includes('r')) nw += dx;
-          if (handle.includes('b')) nh += dy;
-          if (handle.includes('l')) { nx += dx; nw -= dx; }
-          if (handle.includes('t')) { ny += dy; nh -= dy; }
-
-          if (handle === 'br' || handle === 'r' || handle === 'b') nh = nw / ratio;
-          else if (handle === 'tl' || handle === 'l' || handle === 't') {
-            nh = nw / ratio;
-            ny = startRect.y - (nh - startRect.h);
+        if (panDragRef.current.active) {
+          const dx = clientX - panDragRef.current.startX;
+          const dy = clientY - panDragRef.current.startY;
+          const newPanX = panDragRef.current.startPanX + dx;
+          const newPanY = panDragRef.current.startPanY + dy;
+          stateRef.current.panX = newPanX;
+          stateRef.current.panY = newPanY;
+          setPanX(newPanX);
+          setPanY(newPanY);
+          if (!rafRef.current) {
+            rafRef.current = requestAnimationFrame(() => {
+              rafRef.current = null;
+              drawEditor();
+            });
           }
+          return;
         }
 
-        nw = Math.max(40, Math.min(CANVAS_W - nx, nw));
-        nh = Math.max(40, Math.min(CANVAS_H - ny, nh));
+        if (cropDragRef.current.active) {
+          const x = Math.round(((clientX - rect.left) / rect.width) * CANVAS_W);
+          const y = Math.round(((clientY - rect.top) / rect.height) * CANVAS_H);
 
-        setCropRect({ x: nx, y: ny, w: nw, h: nh });
+          const { handle, startX, startY, startRect } = cropDragRef.current;
+          const dx = x - startX;
+          const dy = y - startY;
+
+          let nx = startRect.x;
+          let ny = startRect.y;
+          let nw = startRect.w;
+          let nh = startRect.h;
+          const ratio = startRect.w / startRect.h;
+
+          if (handle === 'move') {
+            nx = Math.max(0, Math.min(CANVAS_W - nw, nx + dx));
+            ny = Math.max(0, Math.min(CANVAS_H - nh, ny + dy));
+          } else {
+            if (handle.includes('r')) nw += dx;
+            if (handle.includes('b')) nh += dy;
+            if (handle.includes('l')) { nx += dx; nw -= dx; }
+            if (handle.includes('t')) { ny += dy; nh -= dy; }
+
+            if (handle === 'br' || handle === 'r' || handle === 'b') nh = nw / ratio;
+            else if (handle === 'tl' || handle === 'l' || handle === 't') {
+              nh = nw / ratio;
+              ny = startRect.y - (nh - startRect.h);
+            }
+          }
+
+          nw = Math.max(40, Math.min(CANVAS_W - nx, nw));
+          nh = Math.max(40, Math.min(CANVAS_H - ny, nh));
+
+          const newRect = { x: nx, y: ny, w: nw, h: nh };
+          stateRef.current.cropRect = newRect;
+          setCropRect(newRect);
+
+          if (!rafRef.current) {
+            rafRef.current = requestAnimationFrame(() => {
+              rafRef.current = null;
+              drawEditor();
+            });
+          }
+        }
+      }
+    };
+
+    const handleWindowUp = () => {
+      if (isBrushing.current || cropDragRef.current.active || panDragRef.current.active) {
+        isBrushing.current = false;
+        cropDragRef.current.active = false;
+        panDragRef.current.active = false;
+        if (editorCanvasRef.current && wizardStep === 1) {
+          editorCanvasRef.current.style.cursor = dragMode === 'pan' ? 'grab' : 'default';
+        }
+      }
+    };
+
+    window.addEventListener('mousemove', handleWindowMove);
+    window.addEventListener('mouseup', handleWindowUp);
+    window.addEventListener('touchmove', handleWindowMove, { passive: false });
+    window.addEventListener('touchend', handleWindowUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMove);
+      window.removeEventListener('mouseup', handleWindowUp);
+      window.removeEventListener('touchmove', handleWindowMove);
+      window.removeEventListener('touchend', handleWindowUp);
+    };
+  }, [wizardStep, dragMode]);
+
+  const handleCanvasHover = (e) => {
+    if (wizardStep === 1 && !cropDragRef.current.active && !panDragRef.current.active && editorCanvasRef.current) {
+      const { x, y } = getCanvasXY(e);
+      const handle = getHandleAt(x, y);
+      if (handle === 'move') {
+        editorCanvasRef.current.style.cursor = 'move';
+      } else if (handle === 'tl' || handle === 'br') {
+        editorCanvasRef.current.style.cursor = 'nwse-resize';
+      } else if (handle === 'tr' || handle === 'bl') {
+        editorCanvasRef.current.style.cursor = 'nesw-resize';
+      } else if (handle === 't' || handle === 'b') {
+        editorCanvasRef.current.style.cursor = 'ns-resize';
+      } else if (handle === 'l' || handle === 'r') {
+        editorCanvasRef.current.style.cursor = 'ew-resize';
+      } else {
+        editorCanvasRef.current.style.cursor = dragMode === 'pan' ? 'grab' : 'default';
       }
     }
-  };
-
-  const handleStopDrag = () => {
-    isBrushing.current = false;
-    cropDragRef.current.active = false;
-    panDragRef.current.active = false;
   };
 
   const handleSavePrintFile = async () => {
@@ -1138,12 +1199,8 @@ export default function PassportPhotoMaker({
                 width={CANVAS_W}
                 height={CANVAS_H}
                 onMouseDown={handleStartDrag}
-                onMouseMove={handleDrag}
-                onMouseUp={handleStopDrag}
-                onMouseLeave={handleStopDrag}
+                onMouseMove={handleCanvasHover}
                 onTouchStart={handleStartDrag}
-                onTouchMove={handleDrag}
-                onTouchEnd={handleStopDrag}
                 style={{
                   ...S.mainCanvas,
                   cursor: dragMode === 'pan' ? 'grab' : 'crosshair'
@@ -1316,9 +1373,8 @@ export default function PassportPhotoMaker({
                 width={CANVAS_W}
                 height={CANVAS_H}
                 onMouseDown={handleStartDrag}
-                onMouseMove={handleDrag}
-                onMouseUp={handleStopDrag}
-                onMouseLeave={handleStopDrag}
+                onMouseMove={handleCanvasHover}
+                onTouchStart={handleStartDrag}
                 style={{
                   ...S.mainCanvas,
                   cursor: getDynamicCursor()
