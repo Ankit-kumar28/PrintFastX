@@ -1140,13 +1140,32 @@ export default function PassportPhotoMaker({
     }
   };
 
-  const downloadSheetJpg = () => {
+  const downloadSheet = (format) => {
     const canvas = buildSheetCanvas();
-    const a = document.createElement('a');
-    a.href = canvas.toDataURL('image/jpeg', 0.95);
-    a.download = `passport_matrix_${paperSize}.jpg`;
-    a.click();
-    toast.success("Downloaded HD matrix sheet!");
+    if (format === 'pdf') {
+      const isA4 = paperSize === 'a4';
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: isA4 ? 'a4' : [152.4, 101.6]
+      });
+      doc.addImage(
+        canvas.toDataURL('image/jpeg', 0.95),
+        'JPEG',
+        0, 0,
+        isA4 ? 210 : 152.4,
+        isA4 ? 297 : 101.6
+      );
+      doc.save(`passport_matrix_${paperSize}.pdf`);
+      toast.success("Downloaded HD matrix PDF!");
+    } else {
+      const type = format === 'png' ? 'image/png' : 'image/jpeg';
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL(type, 0.95);
+      a.download = `passport_matrix_${paperSize}.${format}`;
+      a.click();
+      toast.success(`Downloaded HD matrix (${format.toUpperCase()})!`);
+    }
   };
 
   const downloadSingleJpg = () => {
@@ -1787,28 +1806,46 @@ export default function PassportPhotoMaker({
             </div>
 
             {/* Pipeline fulfillment footer */}
-            <div style={S.fulfillmentFooter}>
-              <button
-                onClick={downloadSheetJpg}
-                style={S.btnHdJpg}
-                className="btn-action"
-              >
-                📥 Download HD Layout Sheet
-              </button>
-              <button
-                onClick={handleSavePrintFile}
-                style={S.btnSendToPrint}
-                className="btn-action"
-              >
-                🖨️ Send Matrix to Print Queue
-              </button>
-              <button
-                onClick={handleDirectPrintMatrix}
-                style={{ ...S.btnSendToPrint, background: '#0f172a', color: '#ffffff' }}
-                className="btn-action"
-              >
-                <Printer size={16} style={{ marginRight: '6px' }}/> Direct Print Matrix
-              </button>
+            <div style={{ ...S.fulfillmentFooter, flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                <button
+                  onClick={() => downloadSheet('jpg')}
+                  style={S.btnHdJpg}
+                  className="btn-action"
+                >
+                  <Download size={15} style={{ marginRight: '6px' }} /> JPG
+                </button>
+                <button
+                  onClick={() => downloadSheet('png')}
+                  style={S.btnHdJpg}
+                  className="btn-action"
+                >
+                  <Download size={15} style={{ marginRight: '6px' }} /> PNG
+                </button>
+                <button
+                  onClick={() => downloadSheet('pdf')}
+                  style={S.btnHdJpg}
+                  className="btn-action"
+                >
+                  <FileText size={15} style={{ marginRight: '6px' }} /> PDF
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                <button
+                  onClick={handleSavePrintFile}
+                  style={S.btnSendToPrint}
+                  className="btn-action"
+                >
+                  🖨️ Send Matrix to Print Queue
+                </button>
+                <button
+                  onClick={handleDirectPrintMatrix}
+                  style={{ ...S.btnSendToPrint, background: '#0f172a', color: '#ffffff' }}
+                  className="btn-action"
+                >
+                  <Printer size={16} style={{ marginRight: '6px' }}/> Direct Print Matrix
+                </button>
+              </div>
             </div>
           </div>
         </div>

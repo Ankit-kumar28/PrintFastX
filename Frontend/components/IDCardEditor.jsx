@@ -1196,13 +1196,26 @@ export default function IDCardEditor({
   }, [wizardStep, drawLayoutPreview]);
 
   // ── Outputs & Save Handlers ────────────────────────────────────────────────
-  const downloadLayoutSheet = () => {
+  const downloadLayoutSheet = (format) => {
     const canvas = buildSheetCanvas();
-    const a = document.createElement('a');
-    a.href = canvas.toDataURL('image/jpeg', 0.95);
-    a.download = `idcard_layout_${paperSize}.jpg`;
-    a.click();
-    toast.success('Downloaded HD print layout sheet!');
+    if (format === 'pdf') {
+      const sDims = getSheetSize();
+      const doc = new jsPDF({
+        orientation: sDims.w > sDims.h ? 'landscape' : 'portrait',
+        unit: 'mm',
+        format: paperSize === 'custom' ? [sDims.w, sDims.h] : paperSize
+      });
+      doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, sDims.w, sDims.h);
+      doc.save(`idcard_layout_${paperSize}.pdf`);
+      toast.success('Downloaded HD print layout PDF!');
+    } else {
+      const type = format === 'png' ? 'image/png' : 'image/jpeg';
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL(type, 0.95);
+      a.download = `idcard_layout_${paperSize}.${format}`;
+      a.click();
+      toast.success(`Downloaded HD print layout (${format.toUpperCase()})!`);
+    }
   };
 
   const handleSavePrintFile = async () => {
@@ -1815,28 +1828,46 @@ export default function IDCardEditor({
             </div>
 
             {/* Pipeline fulfillment footer */}
-            <div style={S.fulfillmentFooter}>
-              <button
-                onClick={downloadLayoutSheet}
-                style={S.btnHdJpg}
-                className="btn-action"
-              >
-                📥 Download HD Card Layout (JPG)
-              </button>
-              <button
-                onClick={handleSavePrintFile}
-                style={S.btnSendToPrint}
-                className="btn-action"
-              >
-                🖨️ Send Sheet to Print Queue
-              </button>
-              <button
-                onClick={handleDirectPrint}
-                style={{ ...S.btnSendToPrint, background: '#0f172a', color: '#ffffff' }}
-                className="btn-action"
-              >
-                Direct Print Sheet
-              </button>
+            <div style={{ ...S.fulfillmentFooter, flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                <button
+                  onClick={() => downloadLayoutSheet('jpg')}
+                  style={S.btnHdJpg}
+                  className="btn-action"
+                >
+                  <Download size={15} style={{ marginRight: '6px' }} /> JPG
+                </button>
+                <button
+                  onClick={() => downloadLayoutSheet('png')}
+                  style={S.btnHdJpg}
+                  className="btn-action"
+                >
+                  <Download size={15} style={{ marginRight: '6px' }} /> PNG
+                </button>
+                <button
+                  onClick={() => downloadLayoutSheet('pdf')}
+                  style={S.btnHdJpg}
+                  className="btn-action"
+                >
+                  <FileText size={15} style={{ marginRight: '6px' }} /> PDF
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                <button
+                  onClick={handleSavePrintFile}
+                  style={S.btnSendToPrint}
+                  className="btn-action"
+                >
+                  🖨️ Send Sheet to Print Queue
+                </button>
+                <button
+                  onClick={handleDirectPrint}
+                  style={{ ...S.btnSendToPrint, background: '#0f172a', color: '#ffffff' }}
+                  className="btn-action"
+                >
+                  Direct Print Sheet
+                </button>
+              </div>
             </div>
           </div>
         </div>
